@@ -1,0 +1,629 @@
+// unqty.nv — the quantities the TYPE CHECKER enforces: one `@value`
+// struct per dimension, each carrying a Float in the SI base unit, and
+// the arithmetic between them as named functions.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// **THIS IS THE HALF THE PLAN'S ROW IS ABOUT.**  "Dimensional analysis
+// the type checker enforces" means exactly one thing that is true and
+// one that is not, and the difference is worth being precise about:
+//
+//   TRUE:  a function that wants a `UnTime` cannot be given a
+//          `UnLength`.  The call does not compile — `E2001`, at the
+//          argument, naming both types — and no test, no review and no
+//          run-time check was involved.  Every unit confusion that has
+//          ever cost anybody a spacecraft is of this shape.
+//
+//   NOT TRUE:  there is no way to write `a / b` and have the checker
+//          work out that a length over a time is a velocity.  novo-lang
+//          has NO arithmetic operator overloading at all: `+`, `-`,
+//          `*`, `/` and `%` are built-ins over the numeric scalars and
+//          are never reinterpreted as a method call, so `force + force`
+//          is `E2000` — "operator '+' not applicable to UnForce and
+//          UnForce" — on a boxed struct as much as on a `@value` one.
+//          Only the SIX COMPARISON operators dispatch (SPEC § 3.8), and
+//          on a `@value` type even those are refused (§ 14.5).
+//
+// So every operation here is a NAMED FUNCTION, and the naming is the
+// documentation: `velocity_of(distance, elapsed)` reads better than
+// `distance / elapsed` would have, and `force_of(m, a)` reads better
+// than `m * a`.  What is lost is the chained expression — a caller
+// computes in two lines where one would do — and what is gained is that
+// there is exactly one spelling per operation rather than an operator
+// whose meaning depends on its operand types.
+//
+// EVERY FUNCTION HERE IS TOTAL.  There is no `Result` in this module at
+// all, and that is the package's argument: a typed quantity library
+// whose arithmetic answered `Result` would be admitting that its types
+// check nothing.  Division by zero answers an infinity, which is IEEE
+// 754 and is what `Float` division already does.
+//
+// EVERY QUANTITY IS ONE FLOAT, IN THE SI BASE UNIT.  A `UnLength` is
+// metres; a `UnMass` is KILOGRAMS, not grams, because the SI base is
+// the kilogram; a `UnTemperature` is kelvin.  Storing the unit beside
+// the magnitude would make every arithmetic operation a conversion and
+// would make two values of one type not interchangeable — which is the
+// mistake a units library makes once.  `unconv` is where a caller's
+// units become these and back.
+//
+// **`UnTemperature` AND `UnTempDelta` ARE TWO TYPES**, and that is the
+// trap this package exists to close.  `20 °C` as an absolute
+// temperature is 293.15 K; a temperature DIFFERENCE of 20 °C is 20 K.
+// One type cannot be both: converting an absolute applies the offset
+// and converting a difference must not, and a library with one
+// temperature gets one of them wrong by 273.15 every time.  Subtracting
+// two absolutes answers a delta; adding a delta to an absolute answers
+// an absolute; adding two absolutes is not an operation and is not
+// published.
+
+// ── The seven bases ─────────────────────────────────────────────────
+
+// A length, in metres.
+pub @value
+struct UnLength
+    si: Float
+
+// A mass, in KILOGRAMS.  See this module's header.
+pub @value
+struct UnMass
+    si: Float
+
+// A duration, in seconds.
+//
+// Not an instant: this is an amount of time, and a point in time is
+// calendar-nv's or `std.time`'s.  A units library that conflated them
+// would let a caller add two dates.
+pub @value
+struct UnTime
+    si: Float
+
+// An electric current, in amperes.
+pub @value
+struct UnCurrent
+    si: Float
+
+// An ABSOLUTE temperature, in kelvin.
+pub @value
+struct UnTemperature
+    si: Float
+
+// A temperature DIFFERENCE, in kelvin.  See this module's header.
+pub @value
+struct UnTempDelta
+    si: Float
+
+// An amount of substance, in moles.
+pub @value
+struct UnAmount
+    si: Float
+
+// A luminous intensity, in candelas.
+pub @value
+struct UnLuminous
+    si: Float
+
+// ── The derived set ─────────────────────────────────────────────────
+
+// An area, in square metres.
+pub @value
+struct UnArea
+    si: Float
+
+// A volume, in cubic metres.
+pub @value
+struct UnVolume
+    si: Float
+
+// A speed, in metres per second.
+pub @value
+struct UnVelocity
+    si: Float
+
+// An acceleration, in metres per second squared.
+pub @value
+struct UnAcceleration
+    si: Float
+
+// A force, in newtons.
+pub @value
+struct UnForce
+    si: Float
+
+// An energy, in joules.
+//
+// The same DIMENSION as a torque, and a different quantity — which is
+// why the static half is worth having: the dimension cannot tell them
+// apart and the type can.  A torque type is not here, and the README
+// says why.
+pub @value
+struct UnEnergy
+    si: Float
+
+// A power, in watts.
+pub @value
+struct UnPower
+    si: Float
+
+// A pressure, in pascals.
+pub @value
+struct UnPressure
+    si: Float
+
+// A frequency, in hertz.
+pub @value
+struct UnFrequency
+    si: Float
+
+// An electric charge, in coulombs.
+pub @value
+struct UnCharge
+    si: Float
+
+// An electric potential, in volts.
+pub @value
+struct UnVoltage
+    si: Float
+
+// An electrical resistance, in ohms.
+pub @value
+struct UnResistance
+    si: Float
+
+// A mass density, in kilograms per cubic metre.
+pub @value
+struct UnDensity
+    si: Float
+
+// A momentum, in kilogram metres per second.
+pub @value
+struct UnMomentum
+    si: Float
+
+// A plane angle, in radians.
+//
+// DIMENSIONLESS — a radian is `length/length` — which is why the type
+// exists at all: the dimension cannot distinguish an angle from a
+// ratio, and the type can.
+pub @value
+struct UnAngle
+    si: Float
+
+// ── Constructors, from the SI base unit ─────────────────────────────
+
+// A length in metres.
+//
+// ```novo
+// use unqty
+//
+// fn main() [io]
+//     let d = unqty.length_m(100.0)
+//     println("${unqty.length_si(d)}")
+// ```
+pub fn length_m(si: Float) -> UnLength
+    todo("units-nv.unqty.length_m")
+
+// A mass in kilograms.
+pub fn mass_kg(si: Float) -> UnMass
+    todo("units-nv.unqty.mass_kg")
+
+// A duration in seconds.
+pub fn time_s(si: Float) -> UnTime
+    todo("units-nv.unqty.time_s")
+
+// A current in amperes.
+pub fn current_a(si: Float) -> UnCurrent
+    todo("units-nv.unqty.current_a")
+
+// An absolute temperature in kelvin.
+pub fn temperature_k(si: Float) -> UnTemperature
+    todo("units-nv.unqty.temperature_k")
+
+// A temperature difference in kelvin.
+pub fn temp_delta_k(si: Float) -> UnTempDelta
+    todo("units-nv.unqty.temp_delta_k")
+
+// An amount of substance in moles.
+pub fn amount_mol(si: Float) -> UnAmount
+    todo("units-nv.unqty.amount_mol")
+
+// A luminous intensity in candelas.
+pub fn luminous_cd(si: Float) -> UnLuminous
+    todo("units-nv.unqty.luminous_cd")
+
+// An area in square metres.
+pub fn area_m2(si: Float) -> UnArea
+    todo("units-nv.unqty.area_m2")
+
+// A volume in cubic metres.
+pub fn volume_m3(si: Float) -> UnVolume
+    todo("units-nv.unqty.volume_m3")
+
+// A speed in metres per second.
+pub fn velocity_mps(si: Float) -> UnVelocity
+    todo("units-nv.unqty.velocity_mps")
+
+// An acceleration in metres per second squared.
+pub fn acceleration_mps2(si: Float) -> UnAcceleration
+    todo("units-nv.unqty.acceleration_mps2")
+
+// A force in newtons.
+pub fn force_n(si: Float) -> UnForce
+    todo("units-nv.unqty.force_n")
+
+// An energy in joules.
+pub fn energy_j(si: Float) -> UnEnergy
+    todo("units-nv.unqty.energy_j")
+
+// A power in watts.
+pub fn power_w(si: Float) -> UnPower
+    todo("units-nv.unqty.power_w")
+
+// A pressure in pascals.
+pub fn pressure_pa(si: Float) -> UnPressure
+    todo("units-nv.unqty.pressure_pa")
+
+// A frequency in hertz.
+pub fn frequency_hz(si: Float) -> UnFrequency
+    todo("units-nv.unqty.frequency_hz")
+
+// A charge in coulombs.
+pub fn charge_c(si: Float) -> UnCharge
+    todo("units-nv.unqty.charge_c")
+
+// A potential in volts.
+pub fn voltage_v(si: Float) -> UnVoltage
+    todo("units-nv.unqty.voltage_v")
+
+// A resistance in ohms.
+pub fn resistance_ohm(si: Float) -> UnResistance
+    todo("units-nv.unqty.resistance_ohm")
+
+// A density in kilograms per cubic metre.
+pub fn density_kgm3(si: Float) -> UnDensity
+    todo("units-nv.unqty.density_kgm3")
+
+// A momentum in kilogram metres per second.
+pub fn momentum_kgmps(si: Float) -> UnMomentum
+    todo("units-nv.unqty.momentum_kgmps")
+
+// An angle in radians.
+pub fn angle_rad(si: Float) -> UnAngle
+    todo("units-nv.unqty.angle_rad")
+
+// ── The magnitudes back out ─────────────────────────────────────────
+
+// The magnitude in the SI base unit.
+//
+// One accessor per type rather than a generic one, because there is no
+// trait a `@value` struct of one field could carry that would let a
+// generic function reach the field — and because a caller reading
+// `length_si(d)` can see which quantity it is holding.
+pub fn length_si(q: UnLength) -> Float
+    todo("units-nv.unqty.length_si")
+
+// The mass's magnitude in its SI base unit.
+pub fn mass_si(q: UnMass) -> Float
+    todo("units-nv.unqty.mass_si")
+
+// The time's magnitude in its SI base unit.
+pub fn time_si(q: UnTime) -> Float
+    todo("units-nv.unqty.time_si")
+
+// The current's magnitude in its SI base unit.
+pub fn current_si(q: UnCurrent) -> Float
+    todo("units-nv.unqty.current_si")
+
+// The temperature's magnitude in its SI base unit.
+pub fn temperature_si(q: UnTemperature) -> Float
+    todo("units-nv.unqty.temperature_si")
+
+// The temp delta's magnitude in its SI base unit.
+pub fn temp_delta_si(q: UnTempDelta) -> Float
+    todo("units-nv.unqty.temp_delta_si")
+
+// The area's magnitude in its SI base unit.
+pub fn area_si(q: UnArea) -> Float
+    todo("units-nv.unqty.area_si")
+
+// The volume's magnitude in its SI base unit.
+pub fn volume_si(q: UnVolume) -> Float
+    todo("units-nv.unqty.volume_si")
+
+// The velocity's magnitude in its SI base unit.
+pub fn velocity_si(q: UnVelocity) -> Float
+    todo("units-nv.unqty.velocity_si")
+
+// The acceleration's magnitude in its SI base unit.
+pub fn acceleration_si(q: UnAcceleration) -> Float
+    todo("units-nv.unqty.acceleration_si")
+
+// The force's magnitude in its SI base unit.
+pub fn force_si(q: UnForce) -> Float
+    todo("units-nv.unqty.force_si")
+
+// The energy's magnitude in its SI base unit.
+pub fn energy_si(q: UnEnergy) -> Float
+    todo("units-nv.unqty.energy_si")
+
+// The power's magnitude in its SI base unit.
+pub fn power_si(q: UnPower) -> Float
+    todo("units-nv.unqty.power_si")
+
+// The pressure's magnitude in its SI base unit.
+pub fn pressure_si(q: UnPressure) -> Float
+    todo("units-nv.unqty.pressure_si")
+
+// The frequency's magnitude in its SI base unit.
+pub fn frequency_si(q: UnFrequency) -> Float
+    todo("units-nv.unqty.frequency_si")
+
+// The angle's magnitude in its SI base unit.
+pub fn angle_si(q: UnAngle) -> Float
+    todo("units-nv.unqty.angle_si")
+
+// ── The arithmetic between dimensions ───────────────────────────────
+
+// A distance over an elapsed time.
+//
+// `UnLength / UnTime -> UnVelocity`, as a named function, because
+// novo-lang has no arithmetic operator overloading — see this module's
+// header for the exact rule and the exact error a `/` would produce.
+pub fn velocity_of(distance: UnLength, elapsed: UnTime) -> UnVelocity
+    todo("units-nv.unqty.velocity_of")
+
+// A speed over an elapsed time.
+pub fn acceleration_of(change: UnVelocity, elapsed: UnTime) -> UnAcceleration
+    todo("units-nv.unqty.acceleration_of")
+
+// A speed times an elapsed time.
+pub fn distance_of(speed: UnVelocity, elapsed: UnTime) -> UnLength
+    todo("units-nv.unqty.distance_of")
+
+// Mass times acceleration.
+pub fn force_of(m: UnMass, a: UnAcceleration) -> UnForce
+    todo("units-nv.unqty.force_of")
+
+// Force times distance.
+//
+// Answers an ENERGY and not a torque, which is the same dimension and a
+// different quantity — the distinction the static half exists for, and
+// the reason a torque would need its own type rather than an
+// annotation.
+pub fn work_of(f: UnForce, distance: UnLength) -> UnEnergy
+    todo("units-nv.unqty.work_of")
+
+// Energy over elapsed time.
+pub fn power_of(e: UnEnergy, elapsed: UnTime) -> UnPower
+    todo("units-nv.unqty.power_of")
+
+// Force over area.
+pub fn pressure_of(f: UnForce, a: UnArea) -> UnPressure
+    todo("units-nv.unqty.pressure_of")
+
+// Two lengths multiplied.
+pub fn area_of(a: UnLength, b: UnLength) -> UnArea
+    todo("units-nv.unqty.area_of")
+
+// An area times a length.
+pub fn volume_of(a: UnArea, h: UnLength) -> UnVolume
+    todo("units-nv.unqty.volume_of")
+
+// Mass over volume.
+pub fn density_of(m: UnMass, v: UnVolume) -> UnDensity
+    todo("units-nv.unqty.density_of")
+
+// Mass times speed.
+pub fn momentum_of(m: UnMass, v: UnVelocity) -> UnMomentum
+    todo("units-nv.unqty.momentum_of")
+
+// One over an elapsed time.
+pub fn frequency_of(period: UnTime) -> UnFrequency
+    todo("units-nv.unqty.frequency_of")
+
+// One over a frequency.
+pub fn period_of(f: UnFrequency) -> UnTime
+    todo("units-nv.unqty.period_of")
+
+// Current times elapsed time.
+pub fn charge_of(i: UnCurrent, elapsed: UnTime) -> UnCharge
+    todo("units-nv.unqty.charge_of")
+
+// Voltage over current — Ohm's law, one way.
+pub fn resistance_of(v: UnVoltage, i: UnCurrent) -> UnResistance
+    todo("units-nv.unqty.resistance_of")
+
+// Current times resistance — Ohm's law, the other way.
+pub fn voltage_of(i: UnCurrent, r: UnResistance) -> UnVoltage
+    todo("units-nv.unqty.voltage_of")
+
+// Voltage times current.
+pub fn electrical_power_of(v: UnVoltage, i: UnCurrent) -> UnPower
+    todo("units-nv.unqty.electrical_power_of")
+
+// An arc length over a radius.
+//
+// The one place the dimensionless angle is produced from two lengths,
+// and the reason `UnAngle` is a type rather than a bare `Float`.
+pub fn angle_of(arc: UnLength, radius: UnLength) -> UnAngle
+    todo("units-nv.unqty.angle_of")
+
+// ── Same-dimension arithmetic ───────────────────────────────────────
+
+// Two lengths added.
+//
+// One `add` per type, because there is no `+` and no trait a `@value`
+// struct could carry that a generic `add<T>` could reach through.  The
+// repetition is real and the README counts it.
+pub fn length_add(a: UnLength, b: UnLength) -> UnLength
+    todo("units-nv.unqty.length_add")
+
+// One length quantity subtracted from another.
+pub fn length_sub(a: UnLength, b: UnLength) -> UnLength
+    todo("units-nv.unqty.length_sub")
+
+// A length scaled by a plain number.
+pub fn length_scale(a: UnLength, k: Float) -> UnLength
+    todo("units-nv.unqty.length_scale")
+
+// The ratio of two lengths, which is a plain number.
+pub fn length_ratio(a: UnLength, b: UnLength) -> Float
+    todo("units-nv.unqty.length_ratio")
+
+// Two time quantities added.
+pub fn time_add(a: UnTime, b: UnTime) -> UnTime
+    todo("units-nv.unqty.time_add")
+
+// One time quantity subtracted from another.
+pub fn time_sub(a: UnTime, b: UnTime) -> UnTime
+    todo("units-nv.unqty.time_sub")
+
+// A time quantity scaled by a plain number.
+pub fn time_scale(a: UnTime, k: Float) -> UnTime
+    todo("units-nv.unqty.time_scale")
+
+// Two mass quantities added.
+pub fn mass_add(a: UnMass, b: UnMass) -> UnMass
+    todo("units-nv.unqty.mass_add")
+
+// A mass quantity scaled by a plain number.
+pub fn mass_scale(a: UnMass, k: Float) -> UnMass
+    todo("units-nv.unqty.mass_scale")
+
+// Two energy quantities added.
+pub fn energy_add(a: UnEnergy, b: UnEnergy) -> UnEnergy
+    todo("units-nv.unqty.energy_add")
+
+// Two force quantities added.
+pub fn force_add(a: UnForce, b: UnForce) -> UnForce
+    todo("units-nv.unqty.force_add")
+
+// Two power quantities added.
+pub fn power_add(a: UnPower, b: UnPower) -> UnPower
+    todo("units-nv.unqty.power_add")
+
+// ── Temperature, where the two types matter ─────────────────────────
+
+// The difference between two absolute temperatures.
+//
+// Answers a DELTA.  `temperature_sub(a, b)` where both are in kelvin is
+// a plain subtraction; the offset never enters, because both operands
+// are already absolute.  The offset enters only in `unconv`, on the way
+// in and out of degrees.
+pub fn temperature_sub(a: UnTemperature, b: UnTemperature) -> UnTempDelta
+    todo("units-nv.unqty.temperature_sub")
+
+// An absolute temperature shifted by a difference.
+pub fn temperature_shift(a: UnTemperature, d: UnTempDelta) -> UnTemperature
+    todo("units-nv.unqty.temperature_shift")
+
+// Two differences added.
+pub fn temp_delta_add(a: UnTempDelta, b: UnTempDelta) -> UnTempDelta
+    todo("units-nv.unqty.temp_delta_add")
+
+// A difference scaled.
+//
+// And note what is NOT here: there is no `temperature_add` and no
+// `temperature_scale`.  Adding two absolute temperatures is not an
+// operation — 20 °C plus 20 °C is not 40 °C in any system — and
+// doubling one is not either.  A library that published them would be
+// publishing two functions whose results are meaningless, and their
+// absence is the type system doing the work.
+pub fn temp_delta_scale(a: UnTempDelta, k: Float) -> UnTempDelta
+    todo("units-nv.unqty.temp_delta_scale")
+
+// ── Comparison, which the operator cannot do ────────────────────────
+
+// Whether two lengths are the same.
+//
+// A named function because `==` on a `@value` type is refused — SPEC
+// § 14.5, `E2015`, "compare the fields you mean".  So a units library
+// built on the unboxed representation publishes one comparison per
+// type, and the README counts that cost against what the representation
+// buys.
+pub fn length_eq(a: UnLength, b: UnLength) -> Bool
+    todo("units-nv.unqty.length_eq")
+
+// Whether two lengths are within a tolerance.
+//
+// The comparison a caller should almost always make, because a length
+// that went through a conversion is a float that went through a
+// multiply.  Published beside the exact one so the choice is visible.
+pub fn length_near(a: UnLength, b: UnLength, tolerance: UnLength) -> Bool
+    todo("units-nv.unqty.length_near")
+
+// How two lengths order.
+pub fn length_compare(a: UnLength, b: UnLength) -> Ordering
+    todo("units-nv.unqty.length_compare")
+
+// Whether two time quantities are the same.
+//
+// A named function because `==` on a `@value` type is refused.
+pub fn time_eq(a: UnTime, b: UnTime) -> Bool
+    todo("units-nv.unqty.time_eq")
+
+// How two time quantities order.
+pub fn time_compare(a: UnTime, b: UnTime) -> Ordering
+    todo("units-nv.unqty.time_compare")
+
+// Whether two mass quantities are the same.
+//
+// A named function because `==` on a `@value` type is refused.
+pub fn mass_eq(a: UnMass, b: UnMass) -> Bool
+    todo("units-nv.unqty.mass_eq")
+
+// Whether two energy quantities are the same.
+//
+// A named function because `==` on a `@value` type is refused.
+pub fn energy_eq(a: UnEnergy, b: UnEnergy) -> Bool
+    todo("units-nv.unqty.energy_eq")
+
+// Whether two temperature quantities are the same.
+//
+// A named function because `==` on a `@value` type is refused.
+pub fn temperature_eq(a: UnTemperature, b: UnTemperature) -> Bool
+    todo("units-nv.unqty.temperature_eq")
+
+// How two temperature quantities order.
+pub fn temperature_compare(a: UnTemperature, b: UnTemperature) -> Ordering
+    todo("units-nv.unqty.temperature_compare")
+
+// ── The bridge to the dynamic half ──────────────────────────────────
+
+// The dimension a `UnLength` has.
+//
+// The same fact the type checker already knew, written down — which is
+// how a typed quantity crosses into `undyn` and back.  One per type,
+// for the same reason the accessors are.
+pub fn length_dim() -> UnDim
+    todo("units-nv.unqty.length_dim")
+
+// The dimension a `mass` quantity has.
+pub fn mass_dim() -> UnDim
+    todo("units-nv.unqty.mass_dim")
+
+// The dimension a `time` quantity has.
+pub fn time_dim() -> UnDim
+    todo("units-nv.unqty.time_dim")
+
+// The dimension a `velocity` quantity has.
+pub fn velocity_dim() -> UnDim
+    todo("units-nv.unqty.velocity_dim")
+
+// The dimension a `force` quantity has.
+pub fn force_dim() -> UnDim
+    todo("units-nv.unqty.force_dim")
+
+// The dimension a `energy` quantity has.
+pub fn energy_dim() -> UnDim
+    todo("units-nv.unqty.energy_dim")
+
+// The dimension a `pressure` quantity has.
+pub fn pressure_dim() -> UnDim
+    todo("units-nv.unqty.pressure_dim")
+
+// How many named quantity types the static set has.
+//
+// Published because "the static set" is otherwise a phrase in a README,
+// and `undim.has_static_type` has to agree with it.
+pub fn static_type_count() -> Int
+    todo("units-nv.unqty.static_type_count")

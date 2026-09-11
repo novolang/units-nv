@@ -1,0 +1,277 @@
+// undim.nv — a dimension as seven exponents, and the algebra over them.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// **THE LOAD-BEARING INTERFACE OF THIS PACKAGE IS `UnDim`.**
+//
+// The SI has seven base dimensions and every physical quantity is a
+// product of integer powers of them: a velocity is
+// `length^1 · time^-1`, a force is `mass^1 · length^1 · time^-2`, a
+// pressure is `mass^1 · length^-1 · time^-2`.  So a dimension IS seven
+// integers, dimensional analysis IS adding and subtracting those
+// vectors, and `UnDim` is that value.
+//
+// It is load-bearing because it is the ONE thing both halves of this
+// package share.  The static half — `unqty`'s named `@value` types —
+// has a fixed dimension per type, which the type checker enforces by
+// refusing to pass a `UnLength` where a `UnTime` is wanted.  The
+// dynamic half — `undyn` — carries its dimension as a value and checks
+// it at run time.  Every function that crosses between them compares
+// two `UnDim`s, and `dim_of` on a static type is the same fact the
+// checker already knew, written down.
+//
+// SEVEN INTEGERS AND NOT A MAP.  A map from a dimension name to an
+// exponent would allocate per quantity and would make `dim_multiply` a
+// merge; seven fields make it seven additions.
+//
+// **AND `UnDim` IS BOXED, WHICH IT SHOULD NOT HAVE TO BE.**  Seven
+// small integers is exactly what `@value` is for — eight bytes, copied
+// in a register, no refcount — and this type cannot be one, because a
+// `@value` struct may not be a field of a boxed struct nor the payload
+// of an enum or a `Result`.  `UnDyn` is boxed (it is what a fallible
+// parse answers) and holds a dimension; `UnFault` carries two in its
+// mismatch variant.  So the representation that fits the data is
+// unavailable at the one place it would pay, and `@value` survives only
+// at the LEAVES of this package — `unqty`'s quantities, which hold one
+// Float and are never carried, compared or returned fallibly.
+//
+// That is the line the language draws, and the README argues it rather
+// than hiding it: the static half is exactly what the unboxed
+// representation can hold.
+//
+// THE ANGLE IS NOT A DIMENSION, and that is a decision rather than an
+// oversight.  A radian is `length/length` and cancels, so `UnAngle`'s
+// dimension is the dimensionless one — which is why `sin` takes a
+// number, why a torque and an energy have the same dimension, and why a
+// library that made the angle a base dimension disagrees with every
+// physics text.  `is_angle_like` is published so a caller that WANTS to
+// distinguish them can, on the type rather than on the dimension.
+
+// A dimension, as the exponent of each SI base.
+//
+// Boxed — see this module's header.  The fields are `Int` rather than
+// `i8` because a boxed struct stores pointer-shaped slots whatever the
+// declaration says, so a narrow declaration would buy nothing and would
+// make every caller write a cast.
+pub struct UnDim
+    // Metre.
+    length: Int
+    // Kilogram.  The SI base is the KILOGRAM and not the gram, which is
+    // the one place the system is inconsistent with its own prefix
+    // rules — and the reason `unconv`'s gram entry has a factor of
+    // 0.001 rather than 1.
+    mass: Int
+    // Second.
+    time: Int
+    // Ampere.
+    current: Int
+    // Kelvin.
+    temperature: Int
+    // Mole.
+    amount: Int
+    // Candela.
+    luminous: Int
+
+// The dimensionless dimension — every exponent zero.
+//
+// What a ratio, an angle, a count and a plain number all have.
+//
+// ```novo
+// use undim
+//
+// fn main() [io]
+//     println("${undim.is_dimensionless(undim.scalar())}")
+// ```
+pub fn scalar() -> UnDim
+    todo("units-nv.undim.scalar")
+
+// A dimension from its seven exponents.
+pub fn dim(length: Int, mass: Int, time: Int, current: Int, temperature: Int, amount: Int,
+           luminous: Int) -> UnDim
+    todo("units-nv.undim.dim")
+
+// ── The seven bases ─────────────────────────────────────────────────
+
+// The length dimension — `m`.
+pub fn length() -> UnDim
+    todo("units-nv.undim.length")
+
+// The mass dimension — `kg`.  The SI base is the kilogram.
+pub fn mass() -> UnDim
+    todo("units-nv.undim.mass")
+
+// The time dimension — `s`.
+pub fn time() -> UnDim
+    todo("units-nv.undim.time")
+
+// The electric current dimension — `A`.
+pub fn current() -> UnDim
+    todo("units-nv.undim.current")
+
+// The thermodynamic temperature dimension — `K`.
+pub fn temperature() -> UnDim
+    todo("units-nv.undim.temperature")
+
+// The amount-of-substance dimension — `mol`.
+pub fn amount() -> UnDim
+    todo("units-nv.undim.amount")
+
+// The luminous intensity dimension — `cd`.
+pub fn luminous() -> UnDim
+    todo("units-nv.undim.luminous")
+
+// ── The derived dimensions the static set names ─────────────────────
+
+// The area dimension — `m^2`.
+pub fn area() -> UnDim
+    todo("units-nv.undim.area")
+
+// The volume dimension — `m^3`.
+pub fn volume() -> UnDim
+    todo("units-nv.undim.volume")
+
+// The speed dimension — `m·s⁻¹`.
+pub fn velocity() -> UnDim
+    todo("units-nv.undim.velocity")
+
+// The acceleration dimension — `m·s⁻²`.
+pub fn acceleration() -> UnDim
+    todo("units-nv.undim.acceleration")
+
+// The force dimension — `kg·m·s⁻²`, the newton.
+pub fn force() -> UnDim
+    todo("units-nv.undim.force")
+
+// The energy dimension — `kg·m²·s⁻²`, the joule.  The same
+// dimension a TORQUE has, which is why the static half distinguishes
+// them by type.
+pub fn energy() -> UnDim
+    todo("units-nv.undim.energy")
+
+// The power dimension — `kg·m²·s⁻³`, the watt.
+pub fn power() -> UnDim
+    todo("units-nv.undim.power")
+
+// The pressure dimension — `kg·m⁻¹·s⁻²`, the pascal.
+pub fn pressure() -> UnDim
+    todo("units-nv.undim.pressure")
+
+// The frequency dimension — `s⁻¹`, the hertz.  The same
+// dimension a radioactive decay rate and an angular velocity have.
+pub fn frequency() -> UnDim
+    todo("units-nv.undim.frequency")
+
+// The electric charge dimension — `A·s`, the coulomb.
+pub fn charge() -> UnDim
+    todo("units-nv.undim.charge")
+
+// The electric potential dimension — `kg·m²·s⁻³·A⁻¹`, the volt.
+pub fn voltage() -> UnDim
+    todo("units-nv.undim.voltage")
+
+// The resistance dimension — `kg·m²·s⁻³·A⁻²`, the ohm.
+pub fn resistance() -> UnDim
+    todo("units-nv.undim.resistance")
+
+// The mass density dimension — `kg·m⁻³`.
+pub fn density() -> UnDim
+    todo("units-nv.undim.density")
+
+// The momentum dimension — `kg·m·s⁻¹`.
+pub fn momentum() -> UnDim
+    todo("units-nv.undim.momentum")
+
+// ── The algebra ─────────────────────────────────────────────────────
+
+// The dimension of a product — the exponents added.
+pub fn dim_multiply(a: UnDim, b: UnDim) -> UnDim
+    todo("units-nv.undim.dim_multiply")
+
+// The dimension of a quotient — the exponents subtracted.
+pub fn dim_divide(a: UnDim, b: UnDim) -> UnDim
+    todo("units-nv.undim.dim_divide")
+
+// The dimension raised to an integer power.
+pub fn dim_power(a: UnDim, n: Int) -> UnDim
+    todo("units-nv.undim.dim_power")
+
+// The dimension's `n`-th root, when every exponent divides.
+//
+// A `Result`, because `sqrt` of an area is a length and `sqrt` of a
+// velocity is not a dimension at all — SI has no half-powers, and a
+// library that rounded would answer a quantity in units nobody can
+// name.  This is the one operation in the algebra that can fail.
+pub fn dim_root(a: UnDim, n: Int) -> Result<UnDim, UnFault>
+    todo("units-nv.undim.dim_root")
+
+// Whether two dimensions are the same.
+//
+// `==` would work on this type, because it is boxed and the implicit
+// structural `Eq` covers it.  The named function is published anyway
+// and is what the rest of this package calls, because the `@value`
+// quantities in `unqty` CANNOT use the operator — a comparison operator
+// on a `@value` type is refused (SPEC § 14.5), the unboxed
+// representation having no cell for a structural comparison to walk —
+// and one spelling across the whole surface is worth more than a
+// shorter one in half of it.
+pub fn dim_eq(a: UnDim, b: UnDim) -> Bool
+    todo("units-nv.undim.dim_eq")
+
+// Whether every exponent is zero.
+pub fn is_dimensionless(a: UnDim) -> Bool
+    todo("units-nv.undim.is_dimensionless")
+
+// Whether a dimension is one of the seven bases.
+pub fn is_base(a: UnDim) -> Bool
+    todo("units-nv.undim.is_base")
+
+// Whether a dimension is one the STATIC set has a type for.
+//
+// The question that says whether a dynamic quantity can cross into the
+// typed half at all — and the one a caller asks before it tries.
+pub fn has_static_type(a: UnDim) -> Bool
+    todo("units-nv.undim.has_static_type")
+
+// Whether a dimension is an angle-like ratio.
+//
+// A radian is `length/length`, so its dimension IS the dimensionless
+// one and this cannot be answered from the exponents.  Published so a
+// caller that wants to distinguish a torque from an energy — same
+// dimension, different quantity — knows the distinction has to live on
+// the TYPE rather than on the dimension, which is the whole argument
+// for the static half.  Always false; the name is the documentation.
+pub fn is_angle_like(a: UnDim) -> Bool
+    todo("units-nv.undim.is_angle_like")
+
+// The dimension written in the SI base symbols — `m·kg·s⁻²`.
+//
+// The canonical spelling, with the bases in the SI's own order and
+// negative exponents as superscripts.  What a fault prints and what a
+// caller shows when a quantity has no named unit.
+pub fn dim_text(a: UnDim) -> Str
+    todo("units-nv.undim.dim_text")
+
+// The dimension written in ASCII — `m*kg/s^2`.
+//
+// Beside `dim_text` because a terminal, a log line and a CSV column all
+// want the ASCII form, and because the superscript form is not
+// round-trippable through `untext.parse_dim` on every terminal.
+pub fn dim_ascii(a: UnDim) -> Str
+    todo("units-nv.undim.dim_ascii")
+
+// The name a dimension has, when it has one — `velocity`, `pressure`,
+// or the empty string.
+pub fn dim_name(a: UnDim) -> Str
+    todo("units-nv.undim.dim_name")
+
+// The exponent of one base, by index `0..6` in the order the struct
+// declares them.
+//
+// Published because the algebra above is written over the seven fields
+// and a caller doing its own arithmetic should not re-derive the order.
+pub fn exponent_at(a: UnDim, index: Int) -> Result<Int, UnFault>
+    todo("units-nv.undim.exponent_at")
+
+// The base symbols, in order — `m`, `kg`, `s`, `A`, `K`, `mol`, `cd`.
+pub fn base_symbols() -> [Str]
+    todo("units-nv.undim.base_symbols")

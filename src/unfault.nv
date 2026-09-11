@@ -1,0 +1,109 @@
+// unfault.nv — why a conversion, a parse or a dimension operation was
+// refused.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// **THE TYPED HALF OF THIS PACKAGE CANNOT FAIL AT ALL, AND THAT IS THE
+// POINT.**  `unqty.velocity_of(distance, elapsed)` takes a `UnLength`
+// and a `UnTime` and answers a `UnVelocity`; there is no argument it can
+// be given that is wrong, because the type checker refused the wrong
+// ones before the program ran.  So there is no `Result` anywhere in
+// `unqty` — every function there is total — and everything this module
+// describes belongs to the DYNAMIC half, where a dimension is a value
+// and can therefore be the wrong one.
+//
+// That asymmetry is the package's whole argument, and the fault list is
+// where it is visible: a library whose typed arithmetic answered
+// `Result` would be admitting that its types check nothing.
+//
+// A `@value` STRUCT CANNOT BE A `Result` PAYLOAD, which shapes the
+// boundary between the halves.  `undyn.require` answers a raw `Float`
+// in SI base units rather than a `UnLength`, and the caller applies the
+// total constructor: `unqty.length_m(undyn.require(d, undim.length())!)`.
+// Two calls where one would read better, and the second cannot fail.
+
+// Why something was refused.
+pub enum UnFault
+    // A dynamic quantity asked for as a dimension it is not.  Carries
+    // both, because "wrong dimension" without the two is a message
+    // nobody can act on — and because the two rendered side by side
+    // (`m·s⁻¹` wanted, `m·s⁻²` got) usually shows the caller its own
+    // mistake.
+    UnWrongDimension(want: UnDim, got: UnDim)
+    // A root that does not divide every exponent — the square root of a
+    // velocity.  SI has no half-powers.
+    UnFractionalDimension(dim: UnDim, root: Int)
+    // An exponent past what an `i8` holds.  Reachable only by raising a
+    // dimension to a large power, and refused rather than wrapped: a
+    // wrapped exponent is a dimension that compares equal to one it is
+    // not.
+    UnExponentOutOfRange(exponent: Int)
+    // A unit symbol this package does not know.
+    UnUnknownUnit(symbol: Str)
+    // A prefix this package does not know — or one on a unit that does
+    // not take prefixes, which `dB` and `°` both are.
+    UnUnknownPrefix(prefix: Str, symbol: Str)
+    // A unit expression that does not parse.  Carries the byte offset,
+    // because `3.5 km/h/` and `3.5 km//h` are different mistakes in the
+    // same string.
+    UnBadUnitSyntax(at: Int, text: Str)
+    // A number that does not parse.
+    UnBadNumber(text: Str)
+    // A quantity string with no unit at all where one was required.
+    UnMissingUnit(text: Str)
+    // An OFFSET unit — degrees Celsius, degrees Fahrenheit — used where
+    // only a scale is meaningful.
+    //
+    // **The trap this package exists to close.**  `20 °C` converted to
+    // kelvin is 293.15 K; a temperature DIFFERENCE of 20 °C converted
+    // to kelvin is 20 K.  The two are different conversions of the same
+    // spelling, and a library with one temperature type gets one of them
+    // wrong — silently, by twenty degrees a time.  So `UnTemperature`
+    // and `UnTempDelta` are two types, and using an offset unit in a
+    // compound expression (`°C/s`, `W/°C`) is refused here rather than
+    // resolved to whichever the implementation happened to pick.
+    UnOffsetUnitInExpression(symbol: Str)
+    // An offset unit raised to a power, which has no meaning at all.
+    UnOffsetUnitWithExponent(symbol: Str, exponent: Int)
+    // A conversion between two units of different dimensions.
+    UnIncompatibleUnits(from: Str, to: Str)
+    // A dimension the static set has no type for, asked to become one.
+    UnNoStaticType(dim: UnDim)
+    // A destination cursor with less room than a formatted quantity
+    // needs.  Nothing is written when this is answered.
+    UnBufferTooSmall(want: Int, have: Int)
+
+// The standard `Error` implementation, so a refused conversion is
+// reported by anything that reports errors.
+//
+// ```novo
+// use unfault
+// use undim
+//
+// fn main() [io]
+//     let f = unfault.wrong_dimension(undim.velocity(), undim.acceleration())
+//     println(f.message())
+// ```
+impl Error for UnFault
+    // The one-line report.  A dimension mismatch renders BOTH
+    // dimensions in the SI base symbols, because `m·s⁻¹ wanted, m·s⁻²
+    // got` is usually the whole diagnosis — somebody divided by a time
+    // twice.
+    fn message(self) -> Str
+        todo("units-nv.unfault.UnFault.message")
+
+// A dimension mismatch, built.
+pub fn wrong_dimension(want: UnDim, got: UnDim) -> UnFault
+    todo("units-nv.unfault.wrong_dimension")
+
+// Whether a fault is about the caller's DIMENSIONS rather than about
+// the text it handed in.
+//
+// The distinction a caller acts on: a wrong dimension is a bug in the
+// program, and a bad unit symbol is a bug in somebody's input file.
+pub fn is_dimensional(f: UnFault) -> Bool
+    todo("units-nv.unfault.is_dimensional")
+
+// The byte offset a parse fault names, or `-1`.
+pub fn offset_of(f: UnFault) -> Int
+    todo("units-nv.unfault.offset_of")

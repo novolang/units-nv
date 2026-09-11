@@ -1,0 +1,319 @@
+// unconv.nv — units: what a magnitude is written in, and the tables
+// that turn it into SI and back.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// A UNIT IS A SCALE, AN OFFSET AND A DIMENSION.  Almost every unit is
+// just a scale — a mile is 1609.344 metres, a horsepower is 745.7 watts
+// — and the handful that are not are the reason this module is larger
+// than a table:
+//
+//   °C and °F have an OFFSET.  273.15 and 459.67 respectively, and the
+//     offset applies to an ABSOLUTE temperature and not to a
+//     DIFFERENCE.  That is the whole argument for `unqty`'s two
+//     temperature types, and `to_si_absolute` / `to_si_delta` are the
+//     two conversions a caller has to choose between.
+//   the KILOGRAM is the SI base, not the gram, so `g` has a factor of
+//     0.001 and `kg` a factor of 1 — which means a prefix on `g` is
+//     scaled against a base that already carries one.  Every units
+//     library has a special case here and this one names it.
+//   ° and dB TAKE NO PREFIX.  A millidegree is not written `m°`, and a
+//     `mdB` is not a thing.  `takes_prefix` is the check.
+//
+// **AN OFFSET UNIT IN A COMPOUND EXPRESSION IS REFUSED**, not resolved.
+// `°C/s` could mean a rate of change of temperature — where the offset
+// must NOT apply, because it is a difference per second — or it could
+// be a mistake.  `W/°C` likewise.  pint resolves these with a set of
+// rules most of its users do not know they are relying on; this package
+// answers `UnOffsetUnitInExpression` and makes the caller write
+// `K/s`, which is unambiguous and is the same number.
+//
+// THE PREFIXES ARE THE SI'S TWENTY-FOUR, and `Ki`, `Mi`, `Gi` are NOT
+// among them.  A kibibyte is IEC 80000-13 and its dimension is a count
+// of bits, which is not an SI dimension at all; a units library that
+// accepted `KiB` would be answering a dimensionless number with a
+// factor of 1024, which is a different package's job.
+//
+// THE TABLE IS THIS PACKAGE'S, NOT A CALLER'S.  `unit_named` resolves
+// a symbol against a fixed set, and a caller with its own unit —
+// a barn, a hogshead, a survey foot — builds a `UnUnit` with
+// `custom_unit` and passes it.  A library with a mutable registry has
+// a caller that registers a unit in one module and another that does
+// not know about it, which is a bug that only shows up in the second
+// program to use both.
+
+// A unit: a symbol, a dimension, a scale and an offset.
+pub struct UnUnit
+    // The symbol as it is written — `km`, `°C`, `lbf`.
+    symbol: Str
+    dim: UnDim
+    // Multiply by this to reach the SI base unit.  A mile's is
+    // 1609.344.
+    factor: Float
+    // Add this AFTER scaling to reach the SI base unit, for an absolute
+    // quantity.  273.15 for `°C`, 0.0 for everything that is not a
+    // temperature scale.
+    offset: Float
+    // Whether an SI prefix may be written on this symbol.  False for
+    // `°`, `dB`, `%` and the imperial units.
+    takes_prefix: Bool
+
+// A named SI prefix.
+pub struct UnPrefix
+    symbol: Str
+    // The power of ten — 3 for `k`, -6 for `µ`.
+    exponent: Int
+
+// The unit a symbol names, prefix included.
+//
+// ```novo
+// use unconv
+//
+// fn main() [io]
+//     match unconv.unit_named("km")
+//         Ok(u)  => println("${u.factor}")
+//         Err(_) => println("no such unit")
+// ```
+pub fn unit_named(symbol: Str) -> Result<UnUnit, UnFault>
+    todo("units-nv.unconv.unit_named")
+
+// A unit a caller defines.
+//
+// The escape from a fixed table that does not need a mutable registry:
+// a caller with a barn, a hogshead or a survey foot builds one and
+// passes it to the conversion functions, and nothing about this
+// package's own table changes.
+pub fn custom_unit(symbol: Str, d: UnDim, factor: Float, offset: Float) -> UnUnit
+    todo("units-nv.unconv.custom_unit")
+
+// The SI base unit of a dimension, as a unit.
+//
+// What `format` writes when a quantity has no named unit, and what a
+// conversion falls back to.
+pub fn base_unit(d: UnDim) -> UnUnit
+    todo("units-nv.unconv.base_unit")
+
+// Whether a unit has an offset.
+//
+// The question every compound-expression check asks, and the one that
+// separates °C from every other unit in the table.
+pub fn has_offset(u: UnUnit) -> Bool
+    todo("units-nv.unconv.has_offset")
+
+// The prefix a symbol starts with, and the rest of the symbol.
+//
+// Answers an empty prefix when there is none.  Published because `m` is
+// both the metre and the milli prefix, `daL` is a decalitre and not a
+// deci-ampere-litre, and a caller splitting a symbol by hand gets one
+// of those wrong.
+pub fn split_prefix(symbol: Str) -> Result<(UnPrefix, Str), UnFault>
+    todo("units-nv.unconv.split_prefix")
+
+// The twenty-four SI prefixes, from quecto to quetta.
+pub fn si_prefixes() -> [UnPrefix]
+    todo("units-nv.unconv.si_prefixes")
+
+// The prefix with no scaling.
+pub fn no_prefix() -> UnPrefix
+    todo("units-nv.unconv.no_prefix")
+
+// ── Converting ──────────────────────────────────────────────────────
+
+// A magnitude in a unit, as an SI magnitude, treated as an ABSOLUTE.
+//
+// The offset applies: `20` in `°C` is `293.15`.
+pub fn to_si_absolute(value: Float, u: UnUnit) -> Float
+    todo("units-nv.unconv.to_si_absolute")
+
+// A magnitude in a unit, as an SI magnitude, treated as a DIFFERENCE.
+//
+// The offset does NOT apply: `20` in `°C` is `20`.  Two functions
+// rather than a flag, because the choice is the caller's and a flag is
+// a thing a caller passes wrongly once and never notices.
+pub fn to_si_delta(value: Float, u: UnUnit) -> Float
+    todo("units-nv.unconv.to_si_delta")
+
+// An SI magnitude in a unit, as an absolute.
+pub fn from_si_absolute(si: Float, u: UnUnit) -> Float
+    todo("units-nv.unconv.from_si_absolute")
+
+// An SI magnitude in a unit, as a difference.
+pub fn from_si_delta(si: Float, u: UnUnit) -> Float
+    todo("units-nv.unconv.from_si_delta")
+
+// A magnitude converted between two units of the same dimension.
+//
+// Refuses units of different dimensions, naming both symbols — the one
+// conversion fault a caller can fix by reading the message.
+pub fn convert(value: Float, from: UnUnit, to: UnUnit) -> Result<Float, UnFault>
+    todo("units-nv.unconv.convert")
+
+// A dynamic quantity read in a unit.
+pub fn dyn_in(q: UnDyn, u: UnUnit) -> Result<Float, UnFault>
+    todo("units-nv.unconv.dyn_in")
+
+// A dynamic quantity from a magnitude and a unit, as an absolute.
+pub fn dyn_of(value: Float, u: UnUnit) -> UnDyn
+    todo("units-nv.unconv.dyn_of")
+
+// ── The named tables, per dimension ─────────────────────────────────
+
+// The length units — metre, foot, inch, yard, mile, nautical mile,
+// ångström, astronomical unit, light-year, parsec.
+//
+// Published as a LIST rather than only through `unit_named`, because a
+// caller building a picker, a validator or a piece of documentation
+// wants to enumerate them, and because a list makes the table
+// reviewable against a reference.
+pub fn length_units() -> [UnUnit]
+    todo("units-nv.unconv.length_units")
+
+// The mass units — kilogram, gram, tonne, pound, ounce, stone, grain,
+// troy ounce.
+pub fn mass_units() -> [UnUnit]
+    todo("units-nv.unconv.mass_units")
+
+// The time units — second, minute, hour, day, week.
+//
+// And NOT the month or the year: neither is a fixed number of seconds,
+// a calendar month is between 28 and 31 days, and a library that
+// answered "a month is 30 days" would be answering a question nobody
+// asked.  That arithmetic is calendar-nv's, over dates, and the
+// README names the boundary.
+pub fn time_units() -> [UnUnit]
+    todo("units-nv.unconv.time_units")
+
+// The temperature scales — kelvin, degree Celsius, degree Fahrenheit,
+// degree Rankine.
+//
+// Two of the four have an offset, which is why they are their own list
+// and why `to_si_absolute` and `to_si_delta` exist.
+pub fn temperature_units() -> [UnUnit]
+    todo("units-nv.unconv.temperature_units")
+
+// The area units — square metre, hectare, acre, square foot, square
+// mile.
+pub fn area_units() -> [UnUnit]
+    todo("units-nv.unconv.area_units")
+
+// The volume units — cubic metre, litre, US gallon, imperial gallon,
+// US fluid ounce, imperial fluid ounce, pint.
+//
+// A US gallon and an imperial gallon differ by a fifth, a US pint and
+// an imperial pint by the same, and both spellings are `gal` and `pt`
+// in somebody's data.  The symbols here are `gal_us` and `gal_imp` —
+// unambiguous, and refusing the bare ones is deliberate: guessing which
+// gallon somebody meant is how a recipe scales wrongly.
+pub fn volume_units() -> [UnUnit]
+    todo("units-nv.unconv.volume_units")
+
+// The speed units — metre per second, kilometre per hour, mile per
+// hour, knot.
+pub fn velocity_units() -> [UnUnit]
+    todo("units-nv.unconv.velocity_units")
+
+// The force units — newton, pound-force, kilogram-force, dyne.
+pub fn force_units() -> [UnUnit]
+    todo("units-nv.unconv.force_units")
+
+// The energy units — joule, calorie, kilocalorie, watt-hour,
+// electronvolt, BTU.
+//
+// The `cal` here is the thermochemical calorie, 4.184 J exactly, and
+// the dietary Calorie is `kcal` — which is a factor of a thousand and
+// is the single most common unit confusion in a consumer application.
+pub fn energy_units() -> [UnUnit]
+    todo("units-nv.unconv.energy_units")
+
+// The power units — watt, horsepower (metric), horsepower
+// (mechanical).
+//
+// Two horsepowers, differing by 1.4%, and both written `hp`.  Same
+// treatment as the gallon.
+pub fn power_units() -> [UnUnit]
+    todo("units-nv.unconv.power_units")
+
+// The pressure units — pascal, bar, atmosphere, torr, psi, millimetre
+// of mercury, inch of mercury.
+pub fn pressure_units() -> [UnUnit]
+    todo("units-nv.unconv.pressure_units")
+
+// The angle units — radian, degree, gradian, arcminute, arcsecond,
+// turn.
+pub fn angle_units() -> [UnUnit]
+    todo("units-nv.unconv.angle_units")
+
+// Every unit in every table.
+pub fn all_units() -> [UnUnit]
+    todo("units-nv.unconv.all_units")
+
+// The units of a dimension.
+pub fn units_of(d: UnDim) -> [UnUnit]
+    todo("units-nv.unconv.units_of")
+
+// ── Typed conversions, for the static half ──────────────────────────
+
+// A length in a named unit.
+//
+// One per static type, and the repetition is `unqty`'s repetition for
+// the same reason: a `@value` struct of one Float carries no trait a
+// generic conversion could reach through.
+pub fn length_in(q: UnLength, u: UnUnit) -> Result<Float, UnFault>
+    todo("units-nv.unconv.length_in")
+
+// A length from a magnitude in a named unit.
+pub fn length_from(value: Float, u: UnUnit) -> Result<Float, UnFault>
+    todo("units-nv.unconv.length_from")
+
+// A mass in a named unit.
+pub fn mass_in(q: UnMass, u: UnUnit) -> Result<Float, UnFault>
+    todo("units-nv.unconv.mass_in")
+
+// A time in a named unit.
+pub fn time_in(q: UnTime, u: UnUnit) -> Result<Float, UnFault>
+    todo("units-nv.unconv.time_in")
+
+// A velocity in a named unit.
+pub fn velocity_in(q: UnVelocity, u: UnUnit) -> Result<Float, UnFault>
+    todo("units-nv.unconv.velocity_in")
+
+// A energy in a named unit.
+pub fn energy_in(q: UnEnergy, u: UnUnit) -> Result<Float, UnFault>
+    todo("units-nv.unconv.energy_in")
+
+// A pressure in a named unit.
+pub fn pressure_in(q: UnPressure, u: UnUnit) -> Result<Float, UnFault>
+    todo("units-nv.unconv.pressure_in")
+
+// An ABSOLUTE temperature in a named scale.
+//
+// The offset applies.  `temperature_k(293.15)` in `°C` is `20`.
+pub fn temperature_in(q: UnTemperature, u: UnUnit) -> Result<Float, UnFault>
+    todo("units-nv.unconv.temperature_in")
+
+// A temperature DIFFERENCE in a named scale.
+//
+// The offset does NOT apply.  `temp_delta_k(20)` in `°C` is `20`, and
+// in `°F` is `36` — the ratio applies and the offset does not, which is
+// the conversion a library with one temperature type gets wrong.
+pub fn temp_delta_in(q: UnTempDelta, u: UnUnit) -> Result<Float, UnFault>
+    todo("units-nv.unconv.temp_delta_in")
+
+// ── Checking a table ────────────────────────────────────────────────
+
+// Every way a unit contradicts itself — an offset on a non-temperature,
+// a factor of zero or below, a prefix flag on a symbol that already
+// carries one.
+//
+// For a caller's `custom_unit`, and for this package's own tests, which
+// run it over every table.
+pub fn check_unit(u: UnUnit) -> [UnFault]
+    todo("units-nv.unconv.check_unit")
+
+// Two units with the same symbol in one table.
+//
+// The check that catches the gallon problem before it ships: if two
+// entries answer to `gal`, `unit_named` resolves one of them and
+// nothing says which.
+pub fn duplicate_symbols(units: [UnUnit]) -> [Str]
+    todo("units-nv.unconv.duplicate_symbols")

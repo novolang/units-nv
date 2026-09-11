@@ -1,0 +1,284 @@
+// undyn.nv — the dynamic quantity: a magnitude, a dimension carried as
+// a value, and the bridge to and from the typed half.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// **THE DYNAMIC HALF IS EVERYTHING THE STATIC SET CANNOT NAME**, and
+// the boundary between them is not a matter of taste: it is drawn by
+// what the language's unboxed representation can hold.
+//
+//   A `@value` STRUCT MAY NOT BE the payload of a `Result`, an optional
+//   or an enum, nor a field of a boxed struct.
+//
+// A parse can fail, so what a parse answers has to be boxed.  A
+// quantity of an arbitrary dimension has to carry that dimension, and a
+// struct that carries one is a struct with a field.  So `UnDyn` is
+// boxed, and `unqty`'s quantities — one Float each, never carried,
+// never returned fallibly — are the leaves where `@value` survives.
+//
+// That is why the static set is a SET rather than a parameter.  A
+// `Quantity<Dim>` generic over the dimension is what uom does in Rust
+// with const generics; novo-lang has no const generics and no numeric
+// bound a `@value` struct could carry, so the static half is a named
+// list and this module is what covers everything off it.
+//
+// THE BRIDGE ANSWERS A RAW FLOAT, FOR THE SAME REASON.  `require`
+// cannot answer a `Result<UnLength, UnFault>` — the payload rule again
+// — so it answers the magnitude in SI base units and the caller applies
+// the total constructor:
+//
+//     let d = untext.parse("3.5 km/h")!
+//     let v = unqty.velocity_mps(undyn.require(d, undim.velocity())!)
+//
+// Two calls where one would read better, and the second cannot fail.
+// It is the shape `docs/publishing.md` calls "a fallible codec returns
+// raws", and it is the one place in this package where the unboxed
+// representation costs a caller something visible.
+//
+// A DYNAMIC QUANTITY REMEMBERS HOW IT WAS WRITTEN.  `3.5 km/h` and
+// `0.972 m/s` are the same quantity, and a program that read the first
+// and printed the second has lost something a person cares about.  So
+// `UnDyn` carries the unit expression it was parsed from, unread by the
+// arithmetic and used by `untext.format` — which is what makes parse
+// then format the identity, and what makes a configuration file survive
+// a round trip through a tool that only changed one value.
+
+// A quantity whose dimension is a value.
+pub struct UnDyn
+    // The magnitude, in the SI base units of `dim`.
+    //
+    // Always SI, whatever the quantity was written in, for the same
+    // reason `unqty`'s quantities are: storing the magnitude in the
+    // caller's unit would make every operation a conversion.
+    si: Float
+    dim: UnDim
+    // The unit expression this was parsed from — `km/h` — or the empty
+    // string for a quantity built from a number.  Carried and NOT read
+    // by any arithmetic here; see this module's header.
+    written_as: Str
+
+// A quantity from a magnitude in SI base units and a dimension.
+//
+// ```novo
+// use undyn
+// use undim
+//
+// fn main() [io]
+//     let q = undyn.of_si(9.81, undim.acceleration())
+//     println("${undyn.si_of(q)}")
+// ```
+pub fn of_si(si: Float, d: UnDim) -> UnDyn
+    todo("units-nv.undyn.of_si")
+
+// A quantity that remembers its spelling.
+pub fn of_si_written(si: Float, d: UnDim, written_as: Str) -> UnDyn
+    todo("units-nv.undyn.of_si_written")
+
+// A dimensionless quantity — a plain number.
+pub fn of_number(v: Float) -> UnDyn
+    todo("units-nv.undyn.of_number")
+
+// The magnitude in SI base units.
+pub fn si_of(q: UnDyn) -> Float
+    todo("units-nv.undyn.si_of")
+
+// The dimension.
+pub fn dim_of(q: UnDyn) -> UnDim
+    todo("units-nv.undyn.dim_of")
+
+// The unit expression it was written in, or the empty string.
+pub fn written_as(q: UnDyn) -> Str
+    todo("units-nv.undyn.written_as")
+
+// Whether a quantity has a dimension.
+pub fn has_dim(q: UnDyn, d: UnDim) -> Bool
+    todo("units-nv.undyn.has_dim")
+
+// Whether a quantity is a plain number.
+pub fn is_number(q: UnDyn) -> Bool
+    todo("units-nv.undyn.is_number")
+
+// ── The arithmetic, where the dimensions travel with the values ─────
+
+// Two quantities added.
+//
+// A `Result`, unlike everything in `unqty`, and that is the whole
+// difference between the halves: here the dimensions are values, so
+// adding a length to a time is a run-time refusal rather than a
+// compile-time one.  `UnWrongDimension` carries both, rendered.
+pub fn add(a: UnDyn, b: UnDyn) -> Result<UnDyn, UnFault>
+    todo("units-nv.undyn.add")
+
+// Two quantities subtracted.
+pub fn sub(a: UnDyn, b: UnDyn) -> Result<UnDyn, UnFault>
+    todo("units-nv.undyn.sub")
+
+// Two quantities multiplied.
+//
+// TOTAL, and that asymmetry with `add` is the dimension algebra rather
+// than an inconsistency: any two dimensions can be multiplied — the
+// exponents add — and only equal ones can be added.
+pub fn multiply(a: UnDyn, b: UnDyn) -> UnDyn
+    todo("units-nv.undyn.multiply")
+
+// Two quantities divided.
+//
+// Total for the same reason.  Division by a zero magnitude answers an
+// infinity, which is IEEE 754 and is what `Float` division does.
+pub fn divide(a: UnDyn, b: UnDyn) -> UnDyn
+    todo("units-nv.undyn.divide")
+
+// A quantity raised to an integer power.
+pub fn power(a: UnDyn, n: Int) -> UnDyn
+    todo("units-nv.undyn.power")
+
+// A quantity's `n`-th root.
+//
+// Fails when the dimension's exponents do not divide — the square root
+// of a velocity is not a quantity SI can name.  The magnitude's own
+// root of a negative number fails too, and the two are different
+// faults.
+pub fn root(a: UnDyn, n: Int) -> Result<UnDyn, UnFault>
+    todo("units-nv.undyn.root")
+
+// A quantity scaled by a plain number.
+pub fn scale(a: UnDyn, k: Float) -> UnDyn
+    todo("units-nv.undyn.scale")
+
+// The negation.
+pub fn negate(a: UnDyn) -> UnDyn
+    todo("units-nv.undyn.negate")
+
+// The absolute value.
+pub fn absolute(a: UnDyn) -> UnDyn
+    todo("units-nv.undyn.absolute")
+
+// ── Comparison ──────────────────────────────────────────────────────
+
+// Whether two quantities are the same quantity.
+//
+// Same dimension AND same magnitude.  `3.5 km/h` and `0.972 m/s` are
+// equal here, because both are stored in SI — which is the answer a
+// caller wants and the reason the magnitude is not stored in the unit
+// it was written in.
+pub fn eq(a: UnDyn, b: UnDyn) -> Bool
+    todo("units-nv.undyn.eq")
+
+// Whether two quantities are equal within a relative tolerance.
+//
+// The comparison a caller should almost always make on a quantity that
+// went through a conversion, and RELATIVE rather than absolute because
+// an absolute tolerance is meaningless across dimensions: a tolerance
+// of 0.001 is tight for a metre and absurd for a pascal.
+pub fn near(a: UnDyn, b: UnDyn, relative_tolerance: Float) -> Bool
+    todo("units-nv.undyn.near")
+
+// How two quantities of the same dimension order.
+//
+// A `Result`, because two quantities of different dimensions do not
+// order at all — there is no answer to "is a metre more than a second",
+// and a library that answered one would sort a list wrongly and
+// silently.
+pub fn compare(a: UnDyn, b: UnDyn) -> Result<Ordering, UnFault>
+    todo("units-nv.undyn.compare")
+
+// ── The bridge ──────────────────────────────────────────────────────
+
+// The magnitude in SI base units, if the dimension is the one wanted.
+//
+// **THE CROSSING POINT**, and it answers a raw `Float` rather than a
+// typed quantity because a `@value` struct may not be a `Result`
+// payload.  See this module's header.
+//
+// A caller that wants to PROPAGATE the failure keeps the raw magnitude
+// in the `Result` and applies the constructor at the end of the chain,
+// because a function that answered `Result<UnVelocity, UnFault>` is
+// itself refused — the payload rule applies to the caller's signature
+// as much as to this one.
+//
+// ```novo
+// use undyn
+// use undim
+// use unqty
+//
+// // Total, because a @value struct cannot travel in a Result at all.
+// fn speed_of(q: UnDyn) -> UnVelocity
+//     unqty.velocity_mps(undyn.require_or(q, undim.velocity(), 0.0))
+//
+// fn main() [io]
+//     println("a fallible bridge answers a raw, and the constructor cannot fail")
+// ```
+pub fn require(q: UnDyn, want: UnDim) -> Result<Float, UnFault>
+    todo("units-nv.undyn.require")
+
+// The magnitude in SI base units, or a fallback when the dimension is
+// wrong.
+//
+// The total form, for a caller with a sensible default — a
+// configuration value that may be absent, a display that shows a dash.
+// Published beside `require` so the choice between failing and
+// defaulting is made at the call site rather than by this package.
+pub fn require_or(q: UnDyn, want: UnDim, fallback: Float) -> Float
+    todo("units-nv.undyn.require_or")
+
+// A dynamic quantity from a typed length.
+//
+// One per static type, and the repetition is the same repetition
+// `unqty`'s accessors are: there is no trait a one-field `@value`
+// struct could carry that a generic function could reach through.
+pub fn of_length(q: UnLength) -> UnDyn
+    todo("units-nv.undyn.of_length")
+
+// A dynamic quantity from a typed mass.
+pub fn of_mass(q: UnMass) -> UnDyn
+    todo("units-nv.undyn.of_mass")
+
+// A dynamic quantity from a typed time.
+pub fn of_time(q: UnTime) -> UnDyn
+    todo("units-nv.undyn.of_time")
+
+// A dynamic quantity from a typed temperature.
+pub fn of_temperature(q: UnTemperature) -> UnDyn
+    todo("units-nv.undyn.of_temperature")
+
+// A dynamic quantity from a typed velocity.
+pub fn of_velocity(q: UnVelocity) -> UnDyn
+    todo("units-nv.undyn.of_velocity")
+
+// A dynamic quantity from a typed acceleration.
+pub fn of_acceleration(q: UnAcceleration) -> UnDyn
+    todo("units-nv.undyn.of_acceleration")
+
+// A dynamic quantity from a typed force.
+pub fn of_force(q: UnForce) -> UnDyn
+    todo("units-nv.undyn.of_force")
+
+// A dynamic quantity from a typed energy.
+pub fn of_energy(q: UnEnergy) -> UnDyn
+    todo("units-nv.undyn.of_energy")
+
+// A dynamic quantity from a typed power.
+pub fn of_power(q: UnPower) -> UnDyn
+    todo("units-nv.undyn.of_power")
+
+// A dynamic quantity from a typed pressure.
+pub fn of_pressure(q: UnPressure) -> UnDyn
+    todo("units-nv.undyn.of_pressure")
+
+// Whether this quantity can become a typed one at all.
+//
+// `undim.has_static_type` over its dimension, published here because
+// this is where a caller asks it — before `require`, so the refusal is
+// "no static type for m·s⁻³" rather than a dimension mismatch against
+// whichever type it guessed.
+pub fn has_static_type(q: UnDyn) -> Bool
+    todo("units-nv.undyn.has_static_type")
+
+// The name of the static type this quantity's dimension maps to, or the
+// empty string — `UnVelocity`, `UnPressure`.
+//
+// For a diagnostic, and for a code generator: a tool that reads a
+// configuration schema of quantities and emits typed accessors needs
+// exactly this.
+pub fn static_type_name(q: UnDyn) -> Str
+    todo("units-nv.undyn.static_type_name")

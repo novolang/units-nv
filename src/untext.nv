@@ -1,0 +1,210 @@
+// untext.nv — reading `3.5 km/h` and writing it back.
+//
+// Every body here is a `todo()`; the signatures are the design.
+//
+// THE GRAMMAR, WHOLE, because it is small enough to state and because
+// stating it is what makes the package reviewable:
+//
+//     quantity   ::= number ws* unit-expr?
+//     unit-expr  ::= factor ( ( '*' | '·' | ' ' | '/' ) factor )*
+//     factor     ::= symbol ( '^' sign? digit+ )?
+//     symbol     ::= prefix? unit-symbol
+//
+// Four things about it are decisions:
+//
+//   A SPACE INSIDE A UNIT EXPRESSION IS A MULTIPLICATION.  `N m` is a
+//     newton-metre, which is how SI writes it, and `3.5 N m` is
+//     therefore a number followed by a two-factor expression.  A parser
+//     that stopped at the first space would read `N` and leave `m`.
+//   `/` IS NOT ASSOCIATIVE AND THIS PARSER MAKES IT LEFT.  `m/s/s` is
+//     `m·s⁻²`, which is what every calculator does and what almost
+//     nobody means to write.  `m/s^2` is the spelling to prefer, and
+//     `format` always emits the second form.
+//   AN EXPONENT BINDS TO ITS FACTOR ONLY.  `m/s^2` is `m·s⁻²` and not
+//     `(m/s)²`, which is the same rule as arithmetic and is worth
+//     stating because the two readings differ by a factor of a metre.
+//   A MISSING UNIT IS A DIMENSIONLESS QUANTITY, not an error.  `3.5`
+//     parses to a plain number, so a configuration file whose values
+//     are sometimes bare and sometimes not reads with one call.
+//     `parse_required` is the strict door for a caller that wants a
+//     unit.
+//
+// **PARSE THEN FORMAT IS THE IDENTITY**, for any string this parser
+// accepts.  `UnDyn` carries the expression it was written in, so
+// `format(parse("3.5 km/h")!)` is `3.5 km/h` and not `0.9722222 m/s`.
+// That is what lets a tool read a configuration file, change one value
+// and hand a person a one-line diff — and it is the same argument
+// ini-nv's document form makes for comments and blank lines.
+//
+// **FORMATTING IS NOT LOCALISED, ON PURPOSE.**  The decimal separator
+// is a point and the group separator is absent, because this is a
+// MACHINE-READABLE spelling: it is what `parse` reads back, what goes
+// in a configuration file and what goes on a wire.  A caller showing a
+// number to a person formats the `Float` with numfmt-nv and writes the
+// unit beside it — which is a caller's decision about an audience, and
+// not something a units library can know.
+
+// How a quantity is written out.
+pub struct UnFormat
+    // How many significant digits.  `0` means "as many as round-trip",
+    // which is the default and what a configuration file wants.
+    significant_digits: Int
+    // Whether to use the unit the quantity was parsed from, when it has
+    // one.  True is what makes parse-then-format the identity.
+    keep_written_unit: Bool
+    // Whether to write the multiplication as `·` rather than a space.
+    // The space is ASCII and the middle dot is what SI prints.
+    middle_dot: Bool
+    // Whether to write negative exponents as superscripts — `m·s⁻²`
+    // rather than `m*s^-2`.
+    superscripts: Bool
+    // Whether to put a space between the number and the unit.  SI says
+    // yes, including before `°C`, and every style guide that says
+    // otherwise is about typography rather than about data.
+    space_before_unit: Bool
+
+// The format a configuration file wants: round-trippable, ASCII, the
+// written unit kept.
+//
+// ```novo
+// use untext
+//
+// fn main() [io]
+//     println("${untext.machine_format().keep_written_unit}")
+// ```
+pub fn machine_format() -> UnFormat
+    todo("units-nv.untext.machine_format")
+
+// The format a printed table wants: SI's own typography, a fixed number
+// of significant digits.
+pub fn printed_format(significant_digits: Int) -> UnFormat
+    todo("units-nv.untext.printed_format")
+
+// ── Reading ─────────────────────────────────────────────────────────
+
+// A quantity from its text.
+//
+// A string with no unit answers a dimensionless quantity rather than
+// failing — see this module's header.
+pub fn parse(text: Str) -> Result<UnDyn, UnFault>
+    todo("units-nv.untext.parse")
+
+// A quantity from its text, with a unit required.
+pub fn parse_required(text: Str) -> Result<UnDyn, UnFault>
+    todo("units-nv.untext.parse_required")
+
+// A quantity from its text, required to have a dimension.
+//
+// The call a configuration reader makes: it knows the field is a
+// duration, so a value of `3.5 km` is an error the reader can report
+// against the FIELD rather than three layers later.
+pub fn parse_as(text: Str, want: UnDim) -> Result<UnDyn, UnFault>
+    todo("units-nv.untext.parse_as")
+
+// A unit expression alone, with no magnitude.
+//
+// For a schema that declares a field's unit, and for a caller
+// validating a string a person typed into a unit box.
+pub fn parse_unit(text: Str) -> Result<UnUnit, UnFault>
+    todo("units-nv.untext.parse_unit")
+
+// A dimension from a unit expression, without resolving the scale.
+//
+// `parse_dim("m/s^2")` is the acceleration dimension.  Published
+// because a schema often wants the dimension and not the unit — it does
+// not care whether a field is in `m/s` or `km/h`, only that it is a
+// speed.
+pub fn parse_dim(text: Str) -> Result<UnDim, UnFault>
+    todo("units-nv.untext.parse_dim")
+
+// The magnitude and the unit expression, as two spans into the caller's
+// own string.
+//
+// For a caller that wants to report an error against the unit half of a
+// string a person typed, and for one that is re-emitting the text with
+// only the number changed.  Answers `(number_start, number_len,
+// unit_start, unit_len)`.
+pub fn split_text(text: Str) -> Result<(Int, Int, Int, Int), UnFault>
+    todo("units-nv.untext.split_text")
+
+// ── Writing ─────────────────────────────────────────────────────────
+
+// A quantity as text.
+//
+// With `keep_written_unit`, the unit it was parsed from; otherwise the
+// SI base unit of its dimension.  Never a unit this package chose for
+// the caller: there is no "pick a readable unit" heuristic here,
+// because what is readable depends on the audience — `0.000001 m` is
+// right in a CAD file and `1 µm` is right in a report, and no library
+// knows which it is in.
+pub fn format(q: UnDyn, f: UnFormat) -> Str
+    todo("units-nv.untext.format")
+
+// A quantity as text in a named unit.
+pub fn format_in(q: UnDyn, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
+    todo("units-nv.untext.format_in")
+
+// A quantity written into a cursor the caller sized.
+//
+// The allocation-free form, for a caller writing many quantities into
+// one buffer — a report, a CSV, a log line.  `format_bound` sizes it,
+// and a cursor with less room writes NOTHING.
+pub fn format_into(q: UnDyn, f: UnFormat, mut dst: Cursor) -> Result<Int, UnFault>
+    todo("units-nv.untext.format_into")
+
+// An upper bound on the bytes a formatted quantity needs.
+pub fn format_bound(q: UnDyn, f: UnFormat) -> Int
+    todo("units-nv.untext.format_bound")
+
+// A unit expression as text.
+pub fn format_unit(u: UnUnit, f: UnFormat) -> Str
+    todo("units-nv.untext.format_unit")
+
+// ── The typed half ──────────────────────────────────────────────────
+
+// A typed length as text, in a named unit.
+//
+// One per static type, for the reason every other per-type function in
+// this package exists.
+pub fn format_length(q: UnLength, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
+    todo("units-nv.untext.format_length")
+
+// A typed duration as text, in a named unit.
+pub fn format_time(q: UnTime, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
+    todo("units-nv.untext.format_time")
+
+// A typed speed as text, in a named unit.
+pub fn format_velocity(q: UnVelocity, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
+    todo("units-nv.untext.format_velocity")
+
+// An ABSOLUTE temperature as text.
+//
+// Uses the absolute conversion, so `293.15 K` in `°C` is `20 °C`.
+// `format_temp_delta` is the other one, and the two exist separately
+// for the same reason their conversions do.
+pub fn format_temperature(q: UnTemperature, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
+    todo("units-nv.untext.format_temperature")
+
+// A temperature DIFFERENCE as text.
+pub fn format_temp_delta(q: UnTempDelta, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
+    todo("units-nv.untext.format_temp_delta")
+
+// ── Round-tripping ──────────────────────────────────────────────────
+
+// Whether formatting this quantity and parsing it back gives the same
+// quantity.
+//
+// The property this module promises, published as a function so a test
+// can assert it over a corpus and so a caller can check a value it is
+// about to write into a file somebody else will read.  False when
+// `significant_digits` is set low enough to lose the magnitude.
+pub fn round_trips(q: UnDyn, f: UnFormat) -> Bool
+    todo("units-nv.untext.round_trips")
+
+// Whether a string is one this parser accepts.
+//
+// For a caller validating input without building a quantity — a form
+// field, a schema check — where the fault matters and the value does
+// not yet.
+pub fn is_quantity(text: Str) -> Bool
+    todo("units-nv.untext.is_quantity")

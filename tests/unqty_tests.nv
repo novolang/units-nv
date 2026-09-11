@@ -1,0 +1,328 @@
+// unqty_tests.nv — what the type checker enforces, and the temperature
+// offset that one type gets wrong.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: units-nv.<module>.<fn>`.
+//
+// THE CASES THAT MATTER ARE THE ONES THAT DO NOT COMPILE, and a test
+// suite cannot contain them: `unqty.velocity_of(elapsed, distance)`
+// with the arguments swapped is `E2001` at the call, which is the whole
+// point and which is unassertable from inside a program that has to
+// build.  So what follows asserts the arithmetic those types carry, and
+// the README states the refusals with the error code they produce.
+//
+// What CAN be asserted, and is: the temperature offset applies to an
+// absolute and not to a difference, `parse` then `format` is the
+// identity, and every table this package publishes is internally
+// consistent.
+
+use std.test
+use std.list
+use unqty
+use undim
+use unconv
+use undyn
+use untext
+use unfault
+
+@test
+fn test_a_quantity_is_one_float_in_the_si_base_unit() [io]
+    test.case("a length is metres")
+    let d = unqty.length_m(100.0)
+    test.assert(unqty.length_si(d) == 100.0)
+
+    test.case("a mass is KILOGRAMS, because that is the SI base")
+    let m = unqty.mass_kg(2.0)
+    test.assert(unqty.mass_si(m) == 2.0)
+
+    test.case("and a temperature is kelvin")
+    let t = unqty.temperature_k(293.15)
+    test.assert(unqty.temperature_si(t) == 293.15)
+
+@test
+fn test_the_arithmetic_between_dimensions_is_named_functions() [io]
+    let d = unqty.length_m(100.0)
+    let s = unqty.time_s(10.0)
+
+    test.case("a distance over an elapsed time is a speed")
+    let v = unqty.velocity_of(d, s)
+    test.assert(unqty.velocity_si(v) == 10.0)
+
+    test.case("a speed over an elapsed time is an acceleration")
+    let a = unqty.acceleration_of(v, s)
+    test.assert(unqty.acceleration_si(a) == 1.0)
+
+    test.case("mass times acceleration is a force")
+    let f = unqty.force_of(unqty.mass_kg(2.0), a)
+    test.assert(unqty.force_si(f) == 2.0)
+
+    test.case("force times distance is an ENERGY, not a torque")
+    let e = unqty.work_of(f, d)
+    test.assert(unqty.energy_si(e) == 200.0)
+
+    test.case("energy over elapsed time is a power")
+    test.assert(unqty.power_si(unqty.power_of(e, s)) == 20.0)
+
+    test.case("and nothing in this module answers a Result")
+    test.assert(unqty.length_si(unqty.length_add(d, d)) == 200.0)
+
+@test
+fn test_the_temperature_offset_applies_to_an_absolute_and_not_to_a_difference() [io]
+    match unconv.unit_named("degC")
+        Err(_) => test.assert(false)
+        Ok(c)  =>
+            test.case("the scale has an offset and kelvin does not")
+            test.assert(unconv.has_offset(c))
+
+            test.case("20 degrees Celsius as an ABSOLUTE is 293.15 kelvin")
+            test.assert(unconv.to_si_absolute(20.0, c) == 293.15)
+
+            test.case("and a DIFFERENCE of 20 degrees Celsius is 20 kelvin")
+            test.assert(unconv.to_si_delta(20.0, c) == 20.0)
+
+            test.case("which is the whole reason there are two temperature types")
+            let hot = unqty.temperature_k(303.15)
+            let cold = unqty.temperature_k(293.15)
+            let gap = unqty.temperature_sub(hot, cold)
+            test.assert(unqty.temp_delta_si(gap) == 10.0)
+
+            test.case("and the difference converts without the offset")
+            match unconv.temp_delta_in(gap, c)
+                Ok(v)  => test.assert(v == 10.0)
+                Err(_) => test.assert(false)
+
+            test.case("while the absolute converts with it")
+            match unconv.temperature_in(cold, c)
+                Ok(v)  => test.assert(v == 20.0)
+                Err(_) => test.assert(false)
+
+    test.case("a Fahrenheit DIFFERENCE of 10 degrees is 5.555… kelvin, not 260")
+    match unconv.unit_named("degF")
+        Err(_) => test.assert(false)
+        Ok(f)  =>
+            test.assert(unconv.to_si_delta(9.0, f) == 5.0)
+            test.assert(unconv.to_si_absolute(32.0, f) == 273.15)
+
+@test
+fn test_an_offset_unit_in_a_compound_expression_is_refused() [io]
+    test.case("a rate of change of temperature is written in kelvin")
+    match untext.parse_dim("K/s")
+        Ok(_)  => test.assert(true)
+        Err(_) => test.assert(false)
+
+    test.case("and the degree spelling is refused rather than guessed at")
+    match untext.parse("1.0 degC/s")
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+    test.case("as is an offset unit with an exponent, which means nothing at all")
+    match untext.parse("1.0 degC^2")
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+@test
+fn test_the_dimension_algebra_is_seven_integers() [io]
+    test.case("a velocity is a length over a time")
+    test.assert(undim.dim_eq(undim.dim_divide(undim.length(), undim.time()),
+                             undim.velocity()))
+
+    test.case("a force is a mass times an acceleration")
+    test.assert(undim.dim_eq(undim.dim_multiply(undim.mass(),
+                                                undim.acceleration()),
+                             undim.force()))
+
+    test.case("an energy is a force times a length")
+    test.assert(undim.dim_eq(undim.dim_multiply(undim.force(),
+                                                undim.length()),
+                             undim.energy()))
+
+    test.case("an area is a length squared")
+    test.assert(undim.dim_eq(undim.dim_power(undim.length(), 2), undim.area()))
+
+    test.case("and its square root is a length again")
+    match undim.dim_root(undim.area(), 2)
+        Ok(d)  => test.assert(undim.dim_eq(d, undim.length()))
+        Err(_) => test.assert(false)
+
+    test.case("while the square root of a velocity is not a dimension SI can name")
+    match undim.dim_root(undim.velocity(), 2)
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+    test.case("a ratio of two lengths is dimensionless")
+    test.assert(undim.is_dimensionless(
+        undim.dim_divide(undim.length(), undim.length())))
+
+    test.case("and so is an angle, which is why the TYPE carries that distinction")
+    test.assert(undim.is_dimensionless(undim.scalar()))
+
+@test
+fn test_adding_a_length_to_a_time_is_a_run_time_refusal_in_the_dynamic_half() [io]
+    let metre = undyn.of_si(1.0, undim.length())
+    let second = undyn.of_si(1.0, undim.time())
+
+    test.case("two lengths add")
+    match undyn.add(metre, metre)
+        Ok(q)  => test.assert(undyn.si_of(q) == 2.0)
+        Err(_) => test.assert(false)
+
+    test.case("a length and a time do not, and the fault names both dimensions")
+    match undyn.add(metre, second)
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert(unfault.is_dimensional(f))
+
+    test.case("but ANY two dimensions multiply — the exponents add")
+    let ms = undyn.multiply(metre, second)
+    test.assert(undim.dim_eq(undyn.dim_of(ms),
+                             undim.dim_multiply(undim.length(), undim.time())))
+
+    test.case("and dividing a length by a time is a velocity")
+    let v = undyn.divide(metre, second)
+    test.assert(undim.dim_eq(undyn.dim_of(v), undim.velocity()))
+
+    test.case("two quantities of different dimensions do not ORDER at all")
+    match undyn.compare(metre, second)
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+@test
+fn test_the_bridge_answers_a_raw_float_because_a_value_struct_cannot_be_a_payload() [io]
+    let v = undyn.of_si(10.0, undim.velocity())
+
+    test.case("the fallible half answers a magnitude")
+    match undyn.require(v, undim.velocity())
+        Ok(si) =>
+            test.case("and the total constructor turns it into a typed quantity")
+            test.assert(unqty.velocity_si(unqty.velocity_mps(si)) == 10.0)
+        Err(_) => test.assert(false)
+
+    test.case("asking for the wrong dimension is refused")
+    match undyn.require(v, undim.acceleration())
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+    test.case("and the total form takes the fallback at the call site")
+    test.assert(undyn.require_or(v, undim.acceleration(), 0.0) == 0.0)
+
+    test.case("a typed quantity crosses the other way with no failure at all")
+    test.assert(undyn.si_of(undyn.of_velocity(unqty.velocity_mps(3.0))) == 3.0)
+
+    test.case("a dimension with no static type says so before a caller tries")
+    test.assert(undim.has_static_type(undim.velocity()))
+    test.assert(undim.has_static_type(undim.dim(1, 0, 0 - 3, 0, 0, 0, 0)) == false)
+
+@test
+fn test_parse_then_format_is_the_identity() [io]
+    let f = untext.machine_format()
+
+    test.case("the written unit is kept, which is what makes the round trip hold")
+    test.assert(f.keep_written_unit)
+
+    match untext.parse("3.5 km/h")
+        Err(_) => test.assert(false)
+        Ok(q)  =>
+            test.case("the magnitude is stored in SI")
+            test.assert(undyn.si_of(q) < 1.0)
+
+            test.case("the dimension is a velocity")
+            test.assert(undim.dim_eq(undyn.dim_of(q), undim.velocity()))
+
+            test.case("the spelling is remembered")
+            test.assert(undyn.written_as(q) == "km/h")
+
+            test.case("and formatting answers what was parsed")
+            test.assert(untext.format(q, f) == "3.5 km/h")
+            test.assert(untext.round_trips(q, f))
+
+    test.case("a bare number is a dimensionless quantity, not an error")
+    match untext.parse("3.5")
+        Ok(q)  => test.assert(undyn.is_number(q))
+        Err(_) => test.assert(false)
+
+    test.case("and parse_required is the strict door for a caller that wants a unit")
+    match untext.parse_required("3.5")
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+@test
+fn test_the_grammar_reads_a_space_as_a_multiplication_and_a_slash_leftwards() [io]
+    test.case("a space inside a unit expression multiplies — N m is a newton-metre")
+    match untext.parse_dim("N m")
+        Ok(d)  => test.assert(undim.dim_eq(d, undim.energy()))
+        Err(_) => test.assert(false)
+
+    test.case("m/s^2 is an acceleration: the exponent binds to its factor")
+    match untext.parse_dim("m/s^2")
+        Ok(d)  => test.assert(undim.dim_eq(d, undim.acceleration()))
+        Err(_) => test.assert(false)
+
+    test.case("and m/s/s is the same, because the slash is left-associative")
+    match untext.parse_dim("m/s/s")
+        Ok(d)  => test.assert(undim.dim_eq(d, undim.acceleration()))
+        Err(_) => test.assert(false)
+
+    test.case("a trailing slash is a syntax fault carrying its offset")
+    match untext.parse("3.5 km/")
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert(unfault.offset_of(f) >= 0)
+
+    test.case("is_quantity is the validation door, with no value built")
+    test.assert(untext.is_quantity("3.5 km/h"))
+    test.assert(untext.is_quantity("3.5 furlongs/fortnight") == false)
+
+@test
+fn test_every_table_this_package_publishes_is_internally_consistent() [io]
+    test.case("no unit contradicts itself")
+    for u in unconv.all_units()
+        test.assert(list.len(unconv.check_unit(u)) == 0)
+
+    test.case("and no two entries answer to one symbol")
+    test.assert(list.len(unconv.duplicate_symbols(unconv.all_units())) == 0)
+
+    test.case("the gallon is spelled unambiguously, because two of them exist")
+    match unconv.unit_named("gal")
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+    match unconv.unit_named("gal_us")
+        Ok(_)  => test.assert(true)
+        Err(_) => test.assert(false)
+
+    test.case("a month is not a unit, because it is not a fixed number of seconds")
+    match unconv.unit_named("month")
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+    test.case("and a kibibyte is not one either — that dimension is not SI's")
+    match unconv.unit_named("KiB")
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+@test
+fn test_the_kilogram_is_the_base_and_the_prefix_rules_follow_from_it() [io]
+    match unconv.unit_named("g")
+        Err(_) => test.assert(false)
+        Ok(g)  => test.assert(g.factor == 0.001)
+
+    match unconv.unit_named("kg")
+        Err(_) => test.assert(false)
+        Ok(kg) => test.assert(kg.factor == 1.0)
+
+    test.case("m is the metre, and mm is a millimetre — the prefix splits off")
+    match unconv.split_prefix("mm")
+        Err(_) => test.assert(false)
+        Ok(p)  =>
+            test.assert(p.0.exponent == 0 - 3)
+            test.assert(p.1 == "m")
+
+    test.case("and a bare m has no prefix at all")
+    match unconv.split_prefix("m")
+        Err(_) => test.assert(false)
+        Ok(p)  => test.assert(p.0.exponent == 0)
+
+    test.case("a degree takes no prefix, so mdeg is not a unit")
+    match unconv.unit_named("mdeg")
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+    test.case("and there are twenty-four SI prefixes")
+    test.assert(list.len(unconv.si_prefixes()) == 24)

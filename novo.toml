@@ -1,0 +1,55 @@
+[package]
+name        = "units-nv"
+version     = "0.0.1"
+description = "Dimensional analysis in two halves: a named set of `@value` quantity types the TYPE CHECKER enforces — a UnLength is not a UnTime and a call that confuses them does not compile — and a dynamic quantity with a seven-exponent dimension vector for everything the static set does not cover.  Parsing and formatting of `3.5 km/h`, conversion tables per dimension, and a temperature offset that applies to absolutes and not to differences.  Interface only — every body is a todo()."
+license     = "Apache-2.0"
+
+# An INTERFACE release: every `pub fn` body is a `todo()`, so the
+# signatures and the effect rows are published and nothing is
+# implemented.  `novo pkg publish` recognises the shape and requires
+# both the draft stability and the 0.0.x version; the first
+# implementation is the 0.1.0 published over it.
+stability   = "draft"
+
+# `core`.  Every function here is arithmetic on floats and integers.
+# Nothing is read, nothing is written, and the one thing a units library
+# might reach a host for — a locale's decimal separator — is not here:
+# `untext` formats and parses the unambiguous spelling, and localising a
+# number is a caller's job.
+#
+# **A `@tier(embedded)` claim WOULD fit the static half**, and it is not
+# made: `unqty`'s quantities are `@value` structs of one Float each and
+# a device that computes a velocity from a distance and a time uses
+# exactly those.  What stops the claim is that `undim`, `undyn`,
+# `unconv` and `untext` all carry strings and growable lists, so the
+# probe would have to cover `unqty` alone — which `host_modules` cannot
+# express (it widens, it does not narrow).  The README names what an
+# embedded split would take, and this release does not claim it.
+layer       = "core"
+
+category    = "science"
+
+tags        = ["units", "dimensional-analysis", "si", "uom", "pint", "quantity", "conversion", "value-types"]
+repository  = "https://github.com/novolang/units-nv"
+maintainers = ["novo-lang"]
+novo        = ">= 0.8.9"
+
+# A library: no `main`, so `novo pkg build` type-checks and
+# effect-checks every module under `src/` and writes no binary.
+
+[docs.pages]
+"README.md" = "What the type checker enforces, and what it cannot"
+
+[dependencies]
+# NONE, and that is the whole shape of this package.
+#
+# A units library's temptation is to take a formatting package for its
+# output and a parser for its input.  Neither pays here: the spelling
+# `untext` reads and writes is `3.5 km/h`, which is a number, a space
+# and a unit expression over `*`, `/` and `^` — a grammar small enough
+# to state in one comment and small enough that a general parser would
+# be a dependency for forty lines.
+#
+# What a caller with a locale wants is `numfmt-nv` over the FLOAT this
+# package answers, which is the caller's call and not a dependency of
+# the arithmetic.
