@@ -238,13 +238,14 @@ text.**
 - **Torque, and uncertainty propagation.** Torque needs a type of its
   own rather than an annotation, and it is not in the set. An
   uncertainty is a second number per quantity and a different subject.
-- **A microcontroller build.** The typed half would fit: a `UnLength` is
-  one float in a value type, with no allocation and no reference count.
-  The other four modules carry strings and growable lists, so a device
-  probe would have to reach `unqty` alone, and a package's device claim
-  cannot be narrowed to one module. An allocation-free subset would be a
-  second package holding `unqty` and the dimension constants. This
-  package makes no device claim and ships no device probe.
+- **A microcontroller build.** The typed half would fit: a `UnLength` is one
+  float in a value type, with no allocation and no reference count. The other
+  four modules carry strings and growable lists, so a probe would have to
+  reach `unqty` alone, and a package cannot narrow such a claim to one of
+  its modules. An allocation-free subset would be a second package holding
+  `unqty` and the dimension constants. Nothing here is claimed to build for
+  a device with no heap allocator, and there is no
+  `tests/embedded_probe.nv`.
 
 ## Related packages
 
