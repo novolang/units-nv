@@ -1,6 +1,6 @@
 [package]
 name        = "units-nv"
-version     = "0.0.1"
+version     = "0.0.2"
 description = "Dimensional analysis in two halves: a named set of `@value` quantity types the TYPE CHECKER enforces — a UnLength is not a UnTime and a call that confuses them does not compile — and a dynamic quantity with a seven-exponent dimension vector for everything the static set does not cover.  Parsing and formatting of `3.5 km/h`, conversion tables per dimension, and a temperature offset that applies to absolutes and not to differences.  Interface only — every body is a todo()."
 license     = "Apache-2.0"
 
