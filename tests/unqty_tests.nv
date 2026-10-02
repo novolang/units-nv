@@ -326,3 +326,179 @@ fn test_the_kilogram_is_the_base_and_the_prefix_rules_follow_from_it() [io]
 
     test.case("and there are twenty-four SI prefixes")
     test.assert(list.len(unconv.si_prefixes()) == 24)
+
+// ── Every constructor and accessor, and the arithmetic each type carries ──
+//
+// What follows names every remaining public function of `unqty` once.
+// Five types — the amount, the luminous intensity, the charge, the
+// density and the momentum — have no `_si` accessor and no function
+// that consumes them into a type that has one, so for those
+// the test can show only that the constructor or the arithmetic is
+// total.  The rest are read back through an accessor and asserted.
+
+@test
+fn test_each_constructor_stores_its_argument_as_the_si_magnitude() [io]
+    test.case("a duration is seconds")
+    test.assert(unqty.time_si(unqty.time_s(60.0)) == 60.0)
+
+    test.case("a current is amperes")
+    test.assert(unqty.current_si(unqty.current_a(1.5)) == 1.5)
+
+    test.case("a temperature difference is kelvin")
+    test.assert(unqty.temp_delta_si(unqty.temp_delta_k(10.0)) == 10.0)
+
+    test.case("an area is square metres and a volume cubic metres")
+    test.assert(unqty.area_si(unqty.area_m2(4.0)) == 4.0)
+    test.assert(unqty.volume_si(unqty.volume_m3(8.0)) == 8.0)
+
+    test.case("an acceleration, a force, an energy and a power")
+    test.assert(unqty.acceleration_si(unqty.acceleration_mps2(9.81)) == 9.81)
+    test.assert(unqty.force_si(unqty.force_n(3.0)) == 3.0)
+    test.assert(unqty.energy_si(unqty.energy_j(5.0)) == 5.0)
+    test.assert(unqty.power_si(unqty.power_w(7.0)) == 7.0)
+
+    test.case("a pressure is pascals and a frequency hertz")
+    test.assert(unqty.pressure_si(unqty.pressure_pa(101325.0)) == 101325.0)
+    test.assert(unqty.frequency_si(unqty.frequency_hz(50.0)) == 50.0)
+
+    test.case("an angle is radians")
+    test.assert(unqty.angle_si(unqty.angle_rad(3.0)) == 3.0)
+
+    test.case("a voltage and a resistance are read back through Ohm's law")
+    let i = unqty.current_a(2.0)
+    let v = unqty.voltage_of(i, unqty.resistance_ohm(3.0))
+    test.assert(unqty.power_si(unqty.electrical_power_of(v, i)) == 12.0)
+    test.assert(unqty.power_si(unqty.electrical_power_of(unqty.voltage_v(5.0), i)) == 10.0)
+
+    test.case("and the five types with no accessor are built without failing")
+    let mol = unqty.amount_mol(1.0)
+    let cd = unqty.luminous_cd(1.0)
+    let q = unqty.charge_c(1.0)
+    let rho = unqty.density_kgm3(1000.0)
+    let p = unqty.momentum_kgmps(1.0)
+
+@test
+fn test_each_cross_dimension_function_answers_the_product_or_quotient() [io]
+    let d = unqty.length_m(100.0)
+    let s = unqty.time_s(10.0)
+
+    test.case("a speed times an elapsed time is a distance")
+    test.assert(unqty.length_si(unqty.distance_of(unqty.velocity_mps(10.0), s)) == 100.0)
+
+    test.case("two lengths make an area, and an area and a length a volume")
+    let a = unqty.area_of(unqty.length_m(2.0), unqty.length_m(3.0))
+    test.assert(unqty.area_si(a) == 6.0)
+    test.assert(unqty.volume_si(unqty.volume_of(a, unqty.length_m(4.0))) == 24.0)
+
+    test.case("a force over an area is a pressure")
+    test.assert(unqty.pressure_si(unqty.pressure_of(unqty.force_n(12.0), a)) == 2.0)
+
+    test.case("a frequency and a period are reciprocals")
+    let hz = unqty.frequency_of(unqty.time_s(0.5))
+    test.assert(unqty.frequency_si(hz) == 2.0)
+    test.assert(unqty.time_si(unqty.period_of(hz)) == 0.5)
+
+    test.case("Ohm's law both ways: 6 V over 2 A is 3 ohm, and 2 A through it is 6 V")
+    let i = unqty.current_a(2.0)
+    let r = unqty.resistance_of(unqty.voltage_v(6.0), i)
+    test.assert(unqty.power_si(unqty.electrical_power_of(unqty.voltage_of(i, r), i)) == 12.0)
+
+    test.case("an arc of 2 m on a radius of 1 m is 2 radians")
+    test.assert(unqty.angle_si(unqty.angle_of(unqty.length_m(2.0), unqty.length_m(1.0))) == 2.0)
+
+    test.case("a density, a momentum and a charge are built without failing")
+    let rho = unqty.density_of(unqty.mass_kg(2.0), unqty.volume_m3(1.0))
+    let p = unqty.momentum_of(unqty.mass_kg(2.0), unqty.velocity_mps(3.0))
+    let q = unqty.charge_of(i, s)
+
+@test
+fn test_same_dimension_arithmetic_stays_in_one_type() [io]
+    let five = unqty.length_m(5.0)
+    let two = unqty.length_m(2.0)
+
+    test.case("lengths subtract, scale and divide into a plain number")
+    test.assert(unqty.length_si(unqty.length_sub(five, two)) == 3.0)
+    test.assert(unqty.length_si(unqty.length_scale(two, 1.5)) == 3.0)
+    test.assert(unqty.length_ratio(five, two) == 2.5)
+
+    test.case("durations add, subtract and scale")
+    let m = unqty.time_s(60.0)
+    test.assert(unqty.time_si(unqty.time_add(m, m)) == 120.0)
+    test.assert(unqty.time_si(unqty.time_sub(m, unqty.time_s(20.0))) == 40.0)
+    test.assert(unqty.time_si(unqty.time_scale(m, 0.5)) == 30.0)
+
+    test.case("masses add and scale")
+    test.assert(unqty.mass_si(unqty.mass_add(unqty.mass_kg(1.0), unqty.mass_kg(2.0))) == 3.0)
+    test.assert(unqty.mass_si(unqty.mass_scale(unqty.mass_kg(2.0), 3.0)) == 6.0)
+
+    test.case("energies, forces and powers add")
+    test.assert(unqty.energy_si(unqty.energy_add(unqty.energy_j(1.0), unqty.energy_j(2.0))) == 3.0)
+    test.assert(unqty.force_si(unqty.force_add(unqty.force_n(1.0), unqty.force_n(2.0))) == 3.0)
+    test.assert(unqty.power_si(unqty.power_add(unqty.power_w(1.0), unqty.power_w(2.0))) == 3.0)
+
+@test
+fn test_a_temperature_moves_by_a_difference_and_differences_combine() [io]
+    test.case("an absolute shifted by a difference is an absolute")
+    let warm = unqty.temperature_shift(unqty.temperature_k(293.15), unqty.temp_delta_k(10.0))
+    test.assert_approx(unqty.temperature_si(warm), 303.15, 1.0e-9)
+
+    test.case("two differences add")
+    let d = unqty.temp_delta_add(unqty.temp_delta_k(5.0), unqty.temp_delta_k(5.0))
+    test.assert(unqty.temp_delta_si(d) == 10.0)
+
+    test.case("and a difference scales")
+    test.assert(unqty.temp_delta_si(unqty.temp_delta_scale(d, 1.8)) == 18.0)
+
+@test
+fn test_the_named_comparisons_order_and_equate_one_type() [io]
+    let one = unqty.length_m(1.0)
+    let two = unqty.length_m(2.0)
+
+    test.case("a length equals itself and not another")
+    test.assert(unqty.length_eq(one, unqty.length_m(1.0)))
+    test.assert(unqty.length_eq(one, two) == false)
+
+    test.case("near is within the tolerance and not past it")
+    test.assert(unqty.length_near(one, unqty.length_m(1.0005), unqty.length_m(0.001)))
+    test.assert(unqty.length_near(one, two, unqty.length_m(0.001)) == false)
+
+    test.case("one metre orders before two")
+    match unqty.length_compare(one, two)
+        Less => test.assert(true)
+        _    => test.assert(false)
+
+    test.case("durations equate and order")
+    test.assert(unqty.time_eq(unqty.time_s(1.0), unqty.time_s(1.0)))
+    match unqty.time_compare(unqty.time_s(2.0), unqty.time_s(1.0))
+        Greater => test.assert(true)
+        _       => test.assert(false)
+
+    test.case("masses and energies equate")
+    test.assert(unqty.mass_eq(unqty.mass_kg(1.0), unqty.mass_kg(1.0)))
+    test.assert(unqty.energy_eq(unqty.energy_j(1.0), unqty.energy_j(2.0)) == false)
+
+    test.case("absolute temperatures equate and order")
+    let t = unqty.temperature_k(293.15)
+    test.assert(unqty.temperature_eq(t, unqty.temperature_k(293.15)))
+    match unqty.temperature_compare(t, unqty.temperature_k(293.15))
+        Equal => test.assert(true)
+        _     => test.assert(false)
+
+@test
+fn test_each_static_type_states_the_dimension_the_checker_already_knows() [io]
+    test.case("the bases")
+    test.assert(undim.dim_eq(unqty.length_dim(), undim.length()))
+    test.assert(undim.dim_eq(unqty.mass_dim(), undim.mass()))
+    test.assert(undim.dim_eq(unqty.time_dim(), undim.time()))
+
+    test.case("the derived set")
+    test.assert(undim.dim_eq(unqty.velocity_dim(), undim.velocity()))
+    test.assert(undim.dim_eq(unqty.force_dim(), undim.force()))
+    test.assert(undim.dim_eq(unqty.energy_dim(), undim.energy()))
+    test.assert(undim.dim_eq(unqty.pressure_dim(), undim.pressure()))
+
+    test.case("each of those dimensions has a static type")
+    test.assert(undim.has_static_type(unqty.pressure_dim()))
+
+    test.case("and the static set is the twenty-three types this module declares")
+    test.assert_eq(unqty.static_type_count(), 23)

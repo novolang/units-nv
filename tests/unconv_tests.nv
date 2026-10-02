@@ -1,0 +1,278 @@
+// unconv_tests.nv — the unit tables, the conversions in and out of SI,
+// and the typed conversions for the static half.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: units-nv.<module>.<fn>`.
+//
+// The factors asserted below are the exact definitions: a foot is
+// 0.3048 m, a pound 0.45359237 kg, a calorie 4.184 J, an atmosphere
+// 101325 Pa.  A table that rounds one of them goes red here.
+
+use std.test
+use std.list
+use undim
+use undyn
+use unqty
+use unconv
+
+// Whether a table holds a unit with the symbol `sym`.
+fn has_symbol(units: [UnUnit], sym: Str) -> Bool
+    for u in units
+        if u.symbol == sym
+            return true
+    false
+
+// Whether every unit in a table has the dimension `d`.
+fn all_of_dim(units: [UnUnit], d: UnDim) -> Bool
+    for u in units
+        if undim.dim_eq(u.dim, d) == false
+            return false
+    true
+
+@test
+fn test_a_caller_builds_its_own_unit_without_touching_the_table() [io]
+    test.case("a barn is 1e-28 square metres, with no offset")
+    let barn = unconv.custom_unit("b", undim.area(), 1.0e-28, 0.0)
+    test.assert_eq_str(barn.symbol, "b")
+    test.assert(barn.factor == 1.0e-28)
+    test.assert(unconv.has_offset(barn) == false)
+    test.assert(list.len(unconv.check_unit(barn)) == 0)
+
+    test.case("and the package's own table still does not know it")
+    match unconv.unit_named("b")
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+@test
+fn test_the_base_unit_of_a_dimension_has_a_factor_of_one() [io]
+    test.case("the base unit of a length is the metre")
+    let m = unconv.base_unit(undim.length())
+    test.assert_eq_str(m.symbol, "m")
+    test.assert(m.factor == 1.0)
+    test.assert(m.offset == 0.0)
+
+    test.case("the base unit of a mass is the kilogram")
+    test.assert_eq_str(unconv.base_unit(undim.mass()).symbol, "kg")
+
+    test.case("the empty prefix scales by ten to the zero")
+    let p = unconv.no_prefix()
+    test.assert_eq_str(p.symbol, "")
+    test.assert_eq(p.exponent, 0)
+
+@test
+fn test_the_conversion_out_of_si_is_the_inverse_of_the_conversion_in() [io]
+    match unconv.unit_named("degC")
+        Err(_) => test.assert(false)
+        Ok(c)  =>
+            test.case("293.15 kelvin as an absolute is 20 degrees Celsius")
+            test.assert_approx(unconv.from_si_absolute(293.15, c), 20.0, 1.0e-9)
+
+            test.case("and a difference of 20 kelvin is a difference of 20 degrees")
+            test.assert(unconv.from_si_delta(20.0, c) == 20.0)
+
+    match unconv.unit_named("degF")
+        Err(_) => test.assert(false)
+        Ok(f)  =>
+            test.case("273.15 kelvin is 32 degrees Fahrenheit")
+            test.assert_approx(unconv.from_si_absolute(273.15, f), 32.0, 1.0e-9)
+
+            test.case("a difference of 5 kelvin is 9 Fahrenheit degrees")
+            test.assert_approx(unconv.from_si_delta(5.0, f), 9.0, 1.0e-9)
+
+@test
+fn test_a_conversion_between_two_units_needs_one_dimension() [io]
+    match unconv.unit_named("mi")
+        Err(_) => test.assert(false)
+        Ok(mi) =>
+            match unconv.unit_named("km")
+                Err(_) => test.assert(false)
+                Ok(km) =>
+                    test.case("one mile is 1.609344 kilometres")
+                    match unconv.convert(1.0, mi, km)
+                        Ok(v)  => test.assert_approx(v, 1.609344, 1.0e-12)
+                        Err(_) => test.assert(false)
+
+            match unconv.unit_named("s")
+                Err(_) => test.assert(false)
+                Ok(s)  =>
+                    test.case("a mile in seconds is refused")
+                    match unconv.convert(1.0, mi, s)
+                        Ok(_)  => test.assert(false)
+                        Err(_) => test.assert(true)
+
+@test
+fn test_a_dynamic_quantity_is_read_in_and_built_from_a_unit() [io]
+    match unconv.unit_named("km")
+        Err(_) => test.assert(false)
+        Ok(km) =>
+            test.case("2 km built from the unit is 2000 m in SI")
+            let q = unconv.dyn_of(2.0, km)
+            test.assert(undyn.si_of(q) == 2000.0)
+            test.assert(undyn.has_dim(q, undim.length()))
+
+            test.case("and read back in kilometres it is 2")
+            match unconv.dyn_in(q, km)
+                Ok(v)  => test.assert(v == 2.0)
+                Err(_) => test.assert(false)
+
+            test.case("reading a time in kilometres is refused")
+            match unconv.dyn_in(undyn.of_si(1.0, undim.time()), km)
+                Ok(_)  => test.assert(false)
+                Err(_) => test.assert(true)
+
+    match unconv.unit_named("degC")
+        Err(_) => test.assert(false)
+        Ok(c)  =>
+            test.case("a dynamic quantity in degrees Celsius is built as an absolute")
+            test.assert_approx(undyn.si_of(unconv.dyn_of(20.0, c)), 293.15, 1.0e-9)
+
+@test
+fn test_each_table_holds_the_units_its_doc_names_and_only_its_dimension() [io]
+    test.case("lengths: the metre, the foot, the mile, the parsec")
+    let lengths = unconv.length_units()
+    test.assert(all_of_dim(lengths, undim.length()))
+    test.assert(has_symbol(lengths, "m"))
+    test.assert(has_symbol(lengths, "ft"))
+    test.assert(has_symbol(lengths, "mi"))
+    test.assert(has_symbol(lengths, "pc"))
+
+    test.case("masses: the kilogram, the gram, the pound")
+    let masses = unconv.mass_units()
+    test.assert(all_of_dim(masses, undim.mass()))
+    test.assert(has_symbol(masses, "kg"))
+    test.assert(has_symbol(masses, "g"))
+    test.assert(has_symbol(masses, "lb"))
+
+    test.case("times: the second to the week, and no month or year")
+    let times = unconv.time_units()
+    test.assert(all_of_dim(times, undim.time()))
+    test.assert(has_symbol(times, "s"))
+    test.assert(has_symbol(times, "h"))
+    test.assert(has_symbol(times, "month") == false)
+    test.assert(has_symbol(times, "yr") == false)
+
+    test.case("temperatures: four scales, two of them with an offset")
+    let temps = unconv.temperature_units()
+    test.assert_eq(list.len(temps), 4)
+    test.assert(all_of_dim(temps, undim.temperature()))
+    var offsets = 0
+    for u in temps
+        if unconv.has_offset(u)
+            offsets = offsets + 1
+    test.assert_eq(offsets, 2)
+
+    test.case("areas: the square metre and the hectare")
+    let areas = unconv.area_units()
+    test.assert(all_of_dim(areas, undim.area()))
+    test.assert(has_symbol(areas, "ha"))
+
+    test.case("volumes: the litre and both gallons, each spelled unambiguously")
+    let volumes = unconv.volume_units()
+    test.assert(all_of_dim(volumes, undim.volume()))
+    test.assert(has_symbol(volumes, "L"))
+    test.assert(has_symbol(volumes, "gal_us"))
+    test.assert(has_symbol(volumes, "gal_imp"))
+    test.assert(has_symbol(volumes, "gal") == false)
+
+    test.case("speeds: metres per second, kilometres per hour, the knot")
+    let speeds = unconv.velocity_units()
+    test.assert(all_of_dim(speeds, undim.velocity()))
+    test.assert(has_symbol(speeds, "km/h"))
+    test.assert(has_symbol(speeds, "kn"))
+
+    test.case("forces: the newton and the pound-force")
+    let forces = unconv.force_units()
+    test.assert(all_of_dim(forces, undim.force()))
+    test.assert(has_symbol(forces, "N"))
+    test.assert(has_symbol(forces, "lbf"))
+
+    test.case("energies: the calorie is the thermochemical 4.184 J")
+    let energies = unconv.energy_units()
+    test.assert(all_of_dim(energies, undim.energy()))
+    for u in energies
+        if u.symbol == "cal"
+            test.assert(u.factor == 4.184)
+        if u.symbol == "kcal"
+            test.assert(u.factor == 4184.0)
+
+    test.case("powers: the watt, and no bare hp")
+    let powers = unconv.power_units()
+    test.assert(all_of_dim(powers, undim.power()))
+    test.assert(has_symbol(powers, "W"))
+    test.assert(has_symbol(powers, "hp") == false)
+
+    test.case("pressures: the standard atmosphere is 101325 Pa")
+    let pressures = unconv.pressure_units()
+    test.assert(all_of_dim(pressures, undim.pressure()))
+    for u in pressures
+        if u.symbol == "atm"
+            test.assert(u.factor == 101325.0)
+
+    test.case("angles: the radian and the degree, both dimensionless")
+    let angles = unconv.angle_units()
+    test.assert(all_of_dim(angles, undim.scalar()))
+    test.assert(has_symbol(angles, "rad"))
+
+    test.case("units_of a dimension answers the same table")
+    test.assert_eq(list.len(unconv.units_of(undim.length())), list.len(lengths))
+    test.assert_eq(list.len(unconv.units_of(undim.pressure())), list.len(pressures))
+
+@test
+fn test_each_typed_quantity_reads_in_a_named_unit() [io]
+    match unconv.unit_named("ft")
+        Err(_) => test.assert(false)
+        Ok(ft) =>
+            test.case("0.3048 m is one foot")
+            match unconv.length_in(unqty.length_m(0.3048), ft)
+                Ok(v)  => test.assert_approx(v, 1.0, 1.0e-12)
+                Err(_) => test.assert(false)
+
+            test.case("and one foot is 0.3048 m")
+            match unconv.length_from(1.0, ft)
+                Ok(v)  => test.assert_approx(v, 0.3048, 1.0e-12)
+                Err(_) => test.assert(false)
+
+            test.case("a mass in feet is refused")
+            match unconv.mass_in(unqty.mass_kg(1.0), ft)
+                Ok(_)  => test.assert(false)
+                Err(_) => test.assert(true)
+
+    test.case("0.45359237 kg is one pound")
+    match unconv.unit_named("lb")
+        Err(_) => test.assert(false)
+        Ok(lb) =>
+            match unconv.mass_in(unqty.mass_kg(0.45359237), lb)
+                Ok(v)  => test.assert_approx(v, 1.0, 1.0e-12)
+                Err(_) => test.assert(false)
+
+    test.case("7200 s is two hours")
+    match unconv.unit_named("h")
+        Err(_) => test.assert(false)
+        Ok(h)  =>
+            match unconv.time_in(unqty.time_s(7200.0), h)
+                Ok(v)  => test.assert_approx(v, 2.0, 1.0e-12)
+                Err(_) => test.assert(false)
+
+    test.case("10 m/s is 36 km/h")
+    match unconv.unit_named("km/h")
+        Err(_)  => test.assert(false)
+        Ok(kmh) =>
+            match unconv.velocity_in(unqty.velocity_mps(10.0), kmh)
+                Ok(v)  => test.assert_approx(v, 36.0, 1.0e-9)
+                Err(_) => test.assert(false)
+
+    test.case("4184 J is one kilocalorie")
+    match unconv.unit_named("kcal")
+        Err(_)   => test.assert(false)
+        Ok(kcal) =>
+            match unconv.energy_in(unqty.energy_j(4184.0), kcal)
+                Ok(v)  => test.assert_approx(v, 1.0, 1.0e-12)
+                Err(_) => test.assert(false)
+
+    test.case("101325 Pa is one atmosphere")
+    match unconv.unit_named("atm")
+        Err(_)  => test.assert(false)
+        Ok(atm) =>
+            match unconv.pressure_in(unqty.pressure_pa(101325.0), atm)
+                Ok(v)  => test.assert_approx(v, 1.0, 1.0e-12)
+                Err(_) => test.assert(false)

@@ -1,0 +1,24 @@
+// unfault_tests.nv — the one fault a caller builds by hand.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: units-nv.<module>.<fn>`.
+
+use std.test
+use std.str
+use undim
+use unfault
+
+@test
+fn test_a_dimension_mismatch_names_both_dimensions() [io]
+    let f = unfault.wrong_dimension(undim.velocity(), undim.acceleration())
+
+    test.case("the fault is about the caller's dimensions, not its text")
+    test.assert(unfault.is_dimensional(f))
+
+    test.case("so it carries no byte offset")
+    test.assert_eq(unfault.offset_of(f), 0 - 1)
+
+    test.case("and the message renders the wanted and the received dimension")
+    let msg = f.message()
+    test.assert(str.contains(msg, undim.dim_text(undim.velocity())))
+    test.assert(str.contains(msg, undim.dim_text(undim.acceleration())))

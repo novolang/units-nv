@@ -149,7 +149,7 @@ pub fn format_in(q: UnDyn, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
 // The allocation-free form, for a caller writing many quantities into
 // one buffer — a report, a CSV, a log line.  `format_bound` sizes it,
 // and a cursor with less room writes NOTHING.
-pub fn format_into(q: UnDyn, f: UnFormat, mut dst: Cursor) -> Result<Int, UnFault>
+pub fn format_into(q: UnDyn, f: UnFormat, var dst: Cursor) -> Result<Int, UnFault>
     todo("units-nv.untext.format_into")
 
 // An upper bound on the bytes a formatted quantity needs.

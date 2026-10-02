@@ -1,0 +1,119 @@
+// undyn_tests.nv — the dynamic quantity: building one, the arithmetic
+// that can be refused, comparison, and the crossing from each typed
+// quantity.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: units-nv.<module>.<fn>`.
+
+use std.test
+use undim
+use undyn
+use unqty
+
+@test
+fn test_a_dynamic_quantity_is_built_from_a_magnitude_and_a_dimension() [io]
+    test.case("a quantity built with a spelling remembers it, and stores SI")
+    let q = undyn.of_si_written(1000.0, undim.length(), "km")
+    test.assert_eq_str(undyn.written_as(q), "km")
+    test.assert(undyn.si_of(q) == 1000.0)
+
+    test.case("it has the dimension it was built with and no other")
+    test.assert(undyn.has_dim(q, undim.length()))
+    test.assert(undyn.has_dim(q, undim.time()) == false)
+
+    test.case("a plain number is dimensionless and carries no spelling")
+    let n = undyn.of_number(3.5)
+    test.assert(undyn.is_number(n))
+    test.assert(undyn.has_dim(n, undim.scalar()))
+    test.assert_eq_str(undyn.written_as(n), "")
+    test.assert(undyn.si_of(n) == 3.5)
+
+@test
+fn test_subtraction_is_refused_across_dimensions_and_negation_is_total() [io]
+    let five = undyn.of_si(5.0, undim.length())
+    let two = undyn.of_si(2.0, undim.length())
+
+    test.case("two lengths subtract")
+    match undyn.sub(five, two)
+        Ok(q)  => test.assert(undyn.si_of(q) == 3.0)
+        Err(_) => test.assert(false)
+
+    test.case("a length and a time do not")
+    match undyn.sub(five, undyn.of_si(2.0, undim.time()))
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+    test.case("the negation keeps the dimension and flips the sign")
+    let m = undyn.negate(five)
+    test.assert(undyn.si_of(m) == 0.0 - 5.0)
+    test.assert(undyn.has_dim(m, undim.length()))
+
+@test
+fn test_equality_is_same_dimension_and_same_magnitude_in_si() [io]
+    test.case("3.6 km/h and 1 m/s are equal, because both are stored in SI")
+    let a = undyn.of_si_written(1.0, undim.velocity(), "km/h")
+    let b = undyn.of_si_written(1.0, undim.velocity(), "m/s")
+    test.assert(undyn.eq(a, b))
+
+    test.case("one metre and one second are not, whatever the magnitudes")
+    test.assert(undyn.eq(undyn.of_si(1.0, undim.length()),
+                         undyn.of_si(1.0, undim.time())) == false)
+
+    test.case("near takes a relative tolerance")
+    let x = undyn.of_si(100.0, undim.pressure())
+    let y = undyn.of_si(100.05, undim.pressure())
+    test.assert(undyn.near(x, y, 0.001))
+    test.assert(undyn.near(x, y, 0.0001) == false)
+
+    test.case("and two quantities of different dimensions are never near")
+    test.assert(undyn.near(x, undyn.of_si(100.0, undim.length()), 0.5) == false)
+
+@test
+fn test_each_typed_quantity_crosses_into_the_dynamic_half_with_its_dimension() [io]
+    test.case("a length")
+    let l = undyn.of_length(unqty.length_m(2.0))
+    test.assert(undyn.si_of(l) == 2.0)
+    test.assert(undyn.has_dim(l, undim.length()))
+
+    test.case("a mass")
+    test.assert(undyn.has_dim(undyn.of_mass(unqty.mass_kg(2.0)), undim.mass()))
+
+    test.case("a time")
+    test.assert(undyn.has_dim(undyn.of_time(unqty.time_s(2.0)), undim.time()))
+
+    test.case("an absolute temperature, which stays in kelvin")
+    let t = undyn.of_temperature(unqty.temperature_k(293.15))
+    test.assert(undyn.si_of(t) == 293.15)
+    test.assert(undyn.has_dim(t, undim.temperature()))
+
+    test.case("an acceleration")
+    test.assert(undyn.has_dim(undyn.of_acceleration(unqty.acceleration_mps2(9.81)),
+                              undim.acceleration()))
+
+    test.case("a force")
+    test.assert(undyn.has_dim(undyn.of_force(unqty.force_n(1.0)), undim.force()))
+
+    test.case("an energy")
+    test.assert(undyn.has_dim(undyn.of_energy(unqty.energy_j(1.0)), undim.energy()))
+
+    test.case("a power")
+    test.assert(undyn.has_dim(undyn.of_power(unqty.power_w(1.0)), undim.power()))
+
+    test.case("a pressure")
+    test.assert(undyn.has_dim(undyn.of_pressure(unqty.pressure_pa(101325.0)),
+                              undim.pressure()))
+
+@test
+fn test_the_static_type_name_is_the_type_a_dimension_maps_to() [io]
+    test.case("a velocity maps to UnVelocity")
+    test.assert_eq_str(undyn.static_type_name(undyn.of_si(1.0, undim.velocity())),
+                       "UnVelocity")
+
+    test.case("a pressure maps to UnPressure")
+    test.assert_eq_str(undyn.static_type_name(undyn.of_si(1.0, undim.pressure())),
+                       "UnPressure")
+
+    test.case("a jerk has no static type, so the name is empty")
+    let jerk = undyn.of_si(1.0, undim.dim(1, 0, 0 - 3, 0, 0, 0, 0))
+    test.assert(undyn.has_static_type(jerk) == false)
+    test.assert_eq_str(undyn.static_type_name(jerk), "")

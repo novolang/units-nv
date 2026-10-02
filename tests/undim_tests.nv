@@ -1,0 +1,127 @@
+// undim_tests.nv — the seven bases, the derived dimensions the static
+// set names, and the ways a dimension is written out.
+//
+// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
+// assertion here reaches `not implemented: units-nv.<module>.<fn>`.
+//
+// Each derived dimension is checked against the seven exponents its doc
+// comment gives, built with `undim.dim`, so the table and the algebra
+// cannot drift apart without one of these going red.
+
+use std.test
+use std.list
+use undim
+
+@test
+fn test_each_base_dimension_is_one_exponent_of_one() [io]
+    test.case("the current is the fourth base, the ampere")
+    test.assert(undim.dim_eq(undim.current(), undim.dim(0, 0, 0, 1, 0, 0, 0)))
+
+    test.case("the amount of substance is the sixth, the mole")
+    test.assert(undim.dim_eq(undim.amount(), undim.dim(0, 0, 0, 0, 0, 1, 0)))
+
+    test.case("the luminous intensity is the seventh, the candela")
+    test.assert(undim.dim_eq(undim.luminous(), undim.dim(0, 0, 0, 0, 0, 0, 1)))
+
+    test.case("each of the seven is a base")
+    test.assert(undim.is_base(undim.length()))
+    test.assert(undim.is_base(undim.mass()))
+    test.assert(undim.is_base(undim.time()))
+    test.assert(undim.is_base(undim.current()))
+    test.assert(undim.is_base(undim.temperature()))
+    test.assert(undim.is_base(undim.amount()))
+    test.assert(undim.is_base(undim.luminous()))
+
+    test.case("and a derived dimension or the dimensionless one is not")
+    test.assert(undim.is_base(undim.velocity()) == false)
+    test.assert(undim.is_base(undim.scalar()) == false)
+
+@test
+fn test_each_derived_dimension_has_the_exponents_its_unit_names() [io]
+    test.case("a volume is m^3")
+    test.assert(undim.dim_eq(undim.volume(), undim.dim(3, 0, 0, 0, 0, 0, 0)))
+
+    test.case("a pressure is kg·m⁻¹·s⁻², the pascal")
+    test.assert(undim.dim_eq(undim.pressure(), undim.dim(0 - 1, 1, 0 - 2, 0, 0, 0, 0)))
+
+    test.case("a frequency is s⁻¹, the hertz")
+    test.assert(undim.dim_eq(undim.frequency(), undim.dim(0, 0, 0 - 1, 0, 0, 0, 0)))
+
+    test.case("a charge is A·s, the coulomb")
+    test.assert(undim.dim_eq(undim.charge(), undim.dim(0, 0, 1, 1, 0, 0, 0)))
+
+    test.case("a voltage is kg·m²·s⁻³·A⁻¹, the volt")
+    test.assert(undim.dim_eq(undim.voltage(), undim.dim(2, 1, 0 - 3, 0 - 1, 0, 0, 0)))
+
+    test.case("a resistance is kg·m²·s⁻³·A⁻², the ohm")
+    test.assert(undim.dim_eq(undim.resistance(),
+                             undim.dim(2, 1, 0 - 3, 0 - 2, 0, 0, 0)))
+
+    test.case("a density is kg·m⁻³")
+    test.assert(undim.dim_eq(undim.density(), undim.dim(0 - 3, 1, 0, 0, 0, 0, 0)))
+
+    test.case("a momentum is kg·m·s⁻¹")
+    test.assert(undim.dim_eq(undim.momentum(), undim.dim(1, 1, 0 - 1, 0, 0, 0, 0)))
+
+    test.case("and the derived dimensions agree with the algebra over the bases")
+    test.assert(undim.dim_eq(undim.dim_multiply(undim.current(), undim.time()),
+                             undim.charge()))
+    test.assert(undim.dim_eq(undim.dim_divide(undim.voltage(), undim.current()),
+                             undim.resistance()))
+    test.assert(undim.dim_eq(undim.dim_divide(undim.force(), undim.area()),
+                             undim.pressure()))
+
+@test
+fn test_an_angle_cannot_be_told_apart_from_a_ratio_by_its_dimension() [io]
+    test.case("the answer is always false, because a radian's dimension is the dimensionless one")
+    test.assert(undim.is_angle_like(undim.scalar()) == false)
+    test.assert(undim.is_angle_like(undim.dim_divide(undim.length(), undim.length())) == false)
+    test.assert(undim.is_angle_like(undim.length()) == false)
+
+@test
+fn test_a_dimension_is_written_in_the_si_base_symbols() [io]
+    let accel = undim.acceleration()
+
+    test.case("the canonical spelling uses superscripts for negative exponents")
+    test.assert_eq_str(undim.dim_text(accel), "m·s⁻²")
+
+    test.case("the ASCII spelling divides instead")
+    test.assert_eq_str(undim.dim_ascii(accel), "m/s^2")
+
+    test.case("a dimension with a name answers it")
+    test.assert_eq_str(undim.dim_name(undim.velocity()), "velocity")
+    test.assert_eq_str(undim.dim_name(undim.pressure()), "pressure")
+
+    test.case("and one without a name answers the empty string")
+    test.assert_eq_str(undim.dim_name(undim.dim(1, 0, 0 - 3, 0, 0, 0, 0)), "")
+
+@test
+fn test_the_exponents_are_read_by_index_in_the_order_the_struct_declares() [io]
+    let f = undim.force()
+
+    test.case("index 0 is the length, 1 the mass, 2 the time")
+    match undim.exponent_at(f, 0)
+        Ok(e)  => test.assert_eq(e, 1)
+        Err(_) => test.assert(false)
+    match undim.exponent_at(f, 1)
+        Ok(e)  => test.assert_eq(e, 1)
+        Err(_) => test.assert(false)
+    match undim.exponent_at(f, 2)
+        Ok(e)  => test.assert_eq(e, 0 - 2)
+        Err(_) => test.assert(false)
+
+    test.case("an index past the seventh base is refused")
+    match undim.exponent_at(f, 7)
+        Ok(_)  => test.assert(false)
+        Err(_) => test.assert(true)
+
+    test.case("the base symbols come in the same order")
+    let syms = undim.base_symbols()
+    test.assert_eq(list.len(syms), 7)
+    test.assert_eq_str(syms[0], "m")
+    test.assert_eq_str(syms[1], "kg")
+    test.assert_eq_str(syms[2], "s")
+    test.assert_eq_str(syms[3], "A")
+    test.assert_eq_str(syms[4], "K")
+    test.assert_eq_str(syms[5], "mol")
+    test.assert_eq_str(syms[6], "cd")
