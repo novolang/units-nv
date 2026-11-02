@@ -1,7 +1,4 @@
 // unfault_tests.nv — the one fault a caller builds by hand.
-//
-// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
-// assertion here reaches `not implemented: units-nv.<module>.<fn>`.
 
 use std.test
 use std.str

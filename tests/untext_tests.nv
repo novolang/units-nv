@@ -1,9 +1,6 @@
 // untext_tests.nv — reading a quantity with a required dimension, a
 // unit expression on its own, and every way a quantity is written out.
 //
-// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
-// assertion here reaches `not implemented: units-nv.<module>.<fn>`.
-//
 // Where an expected string ends in a unit, the test writes the symbol
 // the table answers rather than a spelling of its own, so the test does
 // not decide whether degrees Celsius print as `degC` or `°C`.

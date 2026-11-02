@@ -1,9 +1,6 @@
 // unqty_tests.nv — what the type checker enforces, and the temperature
 // offset that one type gets wrong.
 //
-// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
-// assertion here reaches `not implemented: units-nv.<module>.<fn>`.
-//
 // THE CASES THAT MATTER ARE THE ONES THAT DO NOT COMPILE, and a test
 // suite cannot contain them: `unqty.velocity_of(elapsed, distance)`
 // with the arguments swapped is `E2001` at the call, which is the whole
@@ -209,7 +206,7 @@ fn test_the_bridge_answers_a_raw_float_because_a_value_struct_cannot_be_a_payloa
 
     test.case("a dimension with no static type says so before a caller tries")
     test.assert(undim.has_static_type(undim.velocity()))
-    test.assert(undim.has_static_type(undim.dim(1, 0, 0 - 3, 0, 0, 0, 0)) == false)
+    test.assert(not undim.has_static_type(undim.dim(1, 0, 0 - 3, 0, 0, 0, 0)))
 
 @test
 fn test_parse_then_format_is_the_identity() [io]
@@ -268,7 +265,7 @@ fn test_the_grammar_reads_a_space_as_a_multiplication_and_a_slash_leftwards() [i
 
     test.case("is_quantity is the validation door, with no value built")
     test.assert(untext.is_quantity("3.5 km/h"))
-    test.assert(untext.is_quantity("3.5 furlongs/fortnight") == false)
+    test.assert(not untext.is_quantity("3.5 furlongs/fortnight"))
 
 @test
 fn test_every_table_this_package_publishes_is_internally_consistent() [io]
@@ -456,11 +453,11 @@ fn test_the_named_comparisons_order_and_equate_one_type() [io]
 
     test.case("a length equals itself and not another")
     test.assert(unqty.length_eq(one, unqty.length_m(1.0)))
-    test.assert(unqty.length_eq(one, two) == false)
+    test.assert(not unqty.length_eq(one, two))
 
     test.case("near is within the tolerance and not past it")
     test.assert(unqty.length_near(one, unqty.length_m(1.0005), unqty.length_m(0.001)))
-    test.assert(unqty.length_near(one, two, unqty.length_m(0.001)) == false)
+    test.assert(not unqty.length_near(one, two, unqty.length_m(0.001)))
 
     test.case("one metre orders before two")
     match unqty.length_compare(one, two)
@@ -475,7 +472,7 @@ fn test_the_named_comparisons_order_and_equate_one_type() [io]
 
     test.case("masses and energies equate")
     test.assert(unqty.mass_eq(unqty.mass_kg(1.0), unqty.mass_kg(1.0)))
-    test.assert(unqty.energy_eq(unqty.energy_j(1.0), unqty.energy_j(2.0)) == false)
+    test.assert(not unqty.energy_eq(unqty.energy_j(1.0), unqty.energy_j(2.0)))
 
     test.case("absolute temperatures equate and order")
     let t = unqty.temperature_k(293.15)

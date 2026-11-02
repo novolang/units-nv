@@ -1,7 +1,5 @@
 // undim.nv — a dimension as seven exponents, and the algebra over them.
 //
-// Every body here is a `todo()`; the signatures are the design.
-//
 // **THE LOAD-BEARING INTERFACE OF THIS PACKAGE IS `UnDim`.**
 //
 // The SI has seven base dimensions and every physical quantity is a
@@ -47,6 +45,8 @@
 // physics text.  `is_angle_like` is published so a caller that WANTS to
 // distinguish them can, on the type rather than on the dimension.
 
+use unfault
+
 // A dimension, as the exponent of each SI base.
 //
 // Boxed — see this module's header.  The fields are `Int` rather than
@@ -72,6 +72,72 @@ pub struct UnDim
     // Candela.
     luminous: Int
 
+// ── Private helpers ─────────────────────────────────────────────────
+
+// The exponent of base `index`, with no bounds check.
+//
+// The seven-field read the public `exponent_at` wraps in a `Result`,
+// and the one every loop in this module uses.
+fn exponent_of(a: UnDim, index: Int) -> Int
+    match index
+        0 => a.length
+        1 => a.mass
+        2 => a.time
+        3 => a.current
+        4 => a.temperature
+        5 => a.amount
+        _ => a.luminous
+
+// One digit as a superscript character.
+fn super_digit(d: Int) -> Str
+    let digits = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
+    digits[d]
+
+// The digits of `n`, which is not negative, as superscripts.
+fn super_digits(n: Int) -> Str
+    let s = str.from_int(n) as Str
+    var out = ""
+    var i = 0
+    while i < str.len(s)
+        out = out + super_digit(str.byte_at_or(s, i, 0) - '0')
+        i = i + 1
+    out
+
+// An exponent as a superscript, sign included — `⁻²` for minus two.
+fn super_exp(e: Int) -> Str
+    if e < 0
+        "⁻${super_digits(0 - e)}"
+    else
+        super_digits(e)
+
+// One factor of the SI form: the symbol, and the exponent only when it
+// is not one.
+fn si_term(symbol: Str, e: Int) -> Str
+    if e == 1
+        symbol
+    else
+        "${symbol}${super_exp(e)}"
+
+// One factor of the ASCII form, an exponent of one left off.
+fn ascii_term(symbol: Str, e: Int) -> Str
+    if e == 1
+        symbol
+    else
+        "${symbol}^${e}"
+
+// The named dimensions and their names, in the order `dim_name`
+// reports them: the seven bases and then the derived set.
+fn named_dims() -> [(UnDim, Str)]
+    [(length(), "length"), (mass(), "mass"), (time(), "time"),
+     (current(), "current"), (temperature(), "temperature"),
+     (amount(), "amount"), (luminous(), "luminous"), (area(), "area"),
+     (volume(), "volume"), (velocity(), "velocity"),
+     (acceleration(), "acceleration"), (force(), "force"),
+     (energy(), "energy"), (power(), "power"), (pressure(), "pressure"),
+     (frequency(), "frequency"), (charge(), "charge"), (voltage(), "voltage"),
+     (resistance(), "resistance"), (density(), "density"),
+     (momentum(), "momentum")]
+
 // The dimensionless dimension — every exponent zero.
 //
 // What a ratio, an angle, a count and a plain number all have.
@@ -83,117 +149,123 @@ pub struct UnDim
 //     println("${undim.is_dimensionless(undim.scalar())}")
 // ```
 pub fn scalar() -> UnDim
-    todo("units-nv.undim.scalar")
+    dim(0, 0, 0, 0, 0, 0, 0)
 
 // A dimension from its seven exponents.
 pub fn dim(length: Int, mass: Int, time: Int, current: Int, temperature: Int, amount: Int,
            luminous: Int) -> UnDim
-    todo("units-nv.undim.dim")
+    UnDim { length: length, mass: mass, time: time, current: current,
+            temperature: temperature, amount: amount, luminous: luminous }
 
 // ── The seven bases ─────────────────────────────────────────────────
 
 // The length dimension — `m`.
 pub fn length() -> UnDim
-    todo("units-nv.undim.length")
+    dim(1, 0, 0, 0, 0, 0, 0)
 
 // The mass dimension — `kg`.  The SI base is the kilogram.
 pub fn mass() -> UnDim
-    todo("units-nv.undim.mass")
+    dim(0, 1, 0, 0, 0, 0, 0)
 
 // The time dimension — `s`.
 pub fn time() -> UnDim
-    todo("units-nv.undim.time")
+    dim(0, 0, 1, 0, 0, 0, 0)
 
 // The electric current dimension — `A`.
 pub fn current() -> UnDim
-    todo("units-nv.undim.current")
+    dim(0, 0, 0, 1, 0, 0, 0)
 
 // The thermodynamic temperature dimension — `K`.
 pub fn temperature() -> UnDim
-    todo("units-nv.undim.temperature")
+    dim(0, 0, 0, 0, 1, 0, 0)
 
 // The amount-of-substance dimension — `mol`.
 pub fn amount() -> UnDim
-    todo("units-nv.undim.amount")
+    dim(0, 0, 0, 0, 0, 1, 0)
 
 // The luminous intensity dimension — `cd`.
 pub fn luminous() -> UnDim
-    todo("units-nv.undim.luminous")
+    dim(0, 0, 0, 0, 0, 0, 1)
 
 // ── The derived dimensions the static set names ─────────────────────
 
 // The area dimension — `m^2`.
 pub fn area() -> UnDim
-    todo("units-nv.undim.area")
+    dim(2, 0, 0, 0, 0, 0, 0)
 
 // The volume dimension — `m^3`.
 pub fn volume() -> UnDim
-    todo("units-nv.undim.volume")
+    dim(3, 0, 0, 0, 0, 0, 0)
 
 // The speed dimension — `m·s⁻¹`.
 pub fn velocity() -> UnDim
-    todo("units-nv.undim.velocity")
+    dim(1, 0, 0 - 1, 0, 0, 0, 0)
 
 // The acceleration dimension — `m·s⁻²`.
 pub fn acceleration() -> UnDim
-    todo("units-nv.undim.acceleration")
+    dim(1, 0, 0 - 2, 0, 0, 0, 0)
 
 // The force dimension — `kg·m·s⁻²`, the newton.
 pub fn force() -> UnDim
-    todo("units-nv.undim.force")
+    dim(1, 1, 0 - 2, 0, 0, 0, 0)
 
 // The energy dimension — `kg·m²·s⁻²`, the joule.  The same
 // dimension a TORQUE has, which is why the static half distinguishes
 // them by type.
 pub fn energy() -> UnDim
-    todo("units-nv.undim.energy")
+    dim(2, 1, 0 - 2, 0, 0, 0, 0)
 
 // The power dimension — `kg·m²·s⁻³`, the watt.
 pub fn power() -> UnDim
-    todo("units-nv.undim.power")
+    dim(2, 1, 0 - 3, 0, 0, 0, 0)
 
 // The pressure dimension — `kg·m⁻¹·s⁻²`, the pascal.
 pub fn pressure() -> UnDim
-    todo("units-nv.undim.pressure")
+    dim(0 - 1, 1, 0 - 2, 0, 0, 0, 0)
 
 // The frequency dimension — `s⁻¹`, the hertz.  The same
 // dimension a radioactive decay rate and an angular velocity have.
 pub fn frequency() -> UnDim
-    todo("units-nv.undim.frequency")
+    dim(0, 0, 0 - 1, 0, 0, 0, 0)
 
 // The electric charge dimension — `A·s`, the coulomb.
 pub fn charge() -> UnDim
-    todo("units-nv.undim.charge")
+    dim(0, 0, 1, 1, 0, 0, 0)
 
 // The electric potential dimension — `kg·m²·s⁻³·A⁻¹`, the volt.
 pub fn voltage() -> UnDim
-    todo("units-nv.undim.voltage")
+    dim(2, 1, 0 - 3, 0 - 1, 0, 0, 0)
 
 // The resistance dimension — `kg·m²·s⁻³·A⁻²`, the ohm.
 pub fn resistance() -> UnDim
-    todo("units-nv.undim.resistance")
+    dim(2, 1, 0 - 3, 0 - 2, 0, 0, 0)
 
 // The mass density dimension — `kg·m⁻³`.
 pub fn density() -> UnDim
-    todo("units-nv.undim.density")
+    dim(0 - 3, 1, 0, 0, 0, 0, 0)
 
 // The momentum dimension — `kg·m·s⁻¹`.
 pub fn momentum() -> UnDim
-    todo("units-nv.undim.momentum")
+    dim(1, 1, 0 - 1, 0, 0, 0, 0)
 
 // ── The algebra ─────────────────────────────────────────────────────
 
 // The dimension of a product — the exponents added.
 pub fn dim_multiply(a: UnDim, b: UnDim) -> UnDim
-    todo("units-nv.undim.dim_multiply")
+    dim(a.length + b.length, a.mass + b.mass, a.time + b.time,
+        a.current + b.current, a.temperature + b.temperature,
+        a.amount + b.amount, a.luminous + b.luminous)
 
 // The dimension of a quotient — the exponents subtracted.
 pub fn dim_divide(a: UnDim, b: UnDim) -> UnDim
-    todo("units-nv.undim.dim_divide")
+    dim(a.length - b.length, a.mass - b.mass, a.time - b.time,
+        a.current - b.current, a.temperature - b.temperature,
+        a.amount - b.amount, a.luminous - b.luminous)
 
 // The dimension raised to an integer power.
 pub fn dim_power(a: UnDim, n: Int) -> UnDim
-    todo("units-nv.undim.dim_power")
+    dim(a.length * n, a.mass * n, a.time * n, a.current * n,
+        a.temperature * n, a.amount * n, a.luminous * n)
 
 // The dimension's `n`-th root, when every exponent divides.
 //
@@ -201,8 +273,23 @@ pub fn dim_power(a: UnDim, n: Int) -> UnDim
 // velocity is not a dimension at all — SI has no half-powers, and a
 // library that rounded would answer a quantity in units nobody can
 // name.  This is the one operation in the algebra that can fail.
+//
+// An `n` below one is refused: a root of order zero or of a negative
+// order is a power, and `dim_power` is where a power belongs.  The
+// divisibility test is `(e / n) * n == e`, so a negative exponent
+// divides exactly the way a positive one does.
 pub fn dim_root(a: UnDim, n: Int) -> Result<UnDim, UnFault>
-    todo("units-nv.undim.dim_root")
+    if n < 1
+        return Err(UnFractionalDimension(a, n))
+    var rooted: [Int] = []
+    var i = 0
+    while i < 7
+        let e = exponent_of(a, i)
+        if e / n * n != e
+            return Err(UnFractionalDimension(a, n))
+        list.push(rooted, e / n)
+        i = i + 1
+    Ok(dim(rooted[0], rooted[1], rooted[2], rooted[3], rooted[4], rooted[5], rooted[6]))
 
 // Whether two dimensions are the same.
 //
@@ -215,22 +302,39 @@ pub fn dim_root(a: UnDim, n: Int) -> Result<UnDim, UnFault>
 // and one spelling across the whole surface is worth more than a
 // shorter one in half of it.
 pub fn dim_eq(a: UnDim, b: UnDim) -> Bool
-    todo("units-nv.undim.dim_eq")
+    a.length == b.length and a.mass == b.mass and a.time == b.time
+        and a.current == b.current and a.temperature == b.temperature
+        and a.amount == b.amount and a.luminous == b.luminous
 
 // Whether every exponent is zero.
 pub fn is_dimensionless(a: UnDim) -> Bool
-    todo("units-nv.undim.is_dimensionless")
+    dim_eq(a, scalar())
 
 // Whether a dimension is one of the seven bases.
 pub fn is_base(a: UnDim) -> Bool
-    todo("units-nv.undim.is_base")
+    var nonzero = 0
+    var ones = 0
+    var i = 0
+    while i < 7
+        let e = exponent_of(a, i)
+        if e != 0
+            nonzero = nonzero + 1
+        if e == 1
+            ones = ones + 1
+        i = i + 1
+    nonzero == 1 and ones == 1
 
 // Whether a dimension is one the STATIC set has a type for.
 //
 // The question that says whether a dynamic quantity can cross into the
 // typed half at all — and the one a caller asks before it tries.
+//
+// The dimensionless dimension counts, because `UnAngle` names it; the
+// two temperature types share one dimension, so this answers for
+// twenty-two dimensions while `unqty.static_type_count` counts
+// twenty-three types.
 pub fn has_static_type(a: UnDim) -> Bool
-    todo("units-nv.undim.has_static_type")
+    is_dimensionless(a) or dim_name(a) != ""
 
 // Whether a dimension is an angle-like ratio.
 //
@@ -241,7 +345,9 @@ pub fn has_static_type(a: UnDim) -> Bool
 // the TYPE rather than on the dimension, which is the whole argument
 // for the static half.  Always false; the name is the documentation.
 pub fn is_angle_like(a: UnDim) -> Bool
-    todo("units-nv.undim.is_angle_like")
+    false
+
+// ── Rendering ───────────────────────────────────────────────────────
 
 // The dimension written in the SI base symbols — `m·kg·s⁻²`.
 //
@@ -249,20 +355,62 @@ pub fn is_angle_like(a: UnDim) -> Bool
 // negative exponents as superscripts.  What a fault prints and what a
 // caller shows when a quantity has no named unit.
 pub fn dim_text(a: UnDim) -> Str
-    todo("units-nv.undim.dim_text")
+    let symbols = base_symbols()
+    var parts: [Str] = []
+    for i in 0..7
+        let e = exponent_of(a, i)
+        if e != 0
+            list.push(parts, si_term(symbols[i], e))
+    str.join(parts, "·")
 
 // The dimension written in ASCII — `m*kg/s^2`.
 //
 // Beside `dim_text` because a terminal, a log line and a CSV column all
 // want the ASCII form, and because the superscript form is not
 // round-trippable through `untext.parse_dim` on every terminal.
+//
+// Positive exponents come first joined by `*`, and each negative one is
+// its own `/` factor — `m*kg/s^2`, never `m*kg/s s`, because a space
+// multiplies in the grammar and would leave the second exponent
+// positive.  A dimension with no positive exponent keeps the sign on
+// each factor instead, because there is no `/` to carry it: `s^-1`.
 pub fn dim_ascii(a: UnDim) -> Str
-    todo("units-nv.undim.dim_ascii")
+    let symbols = base_symbols()
+    var positives: [Str] = []
+    var negatives: [Str] = []
+    for i in 0..7
+        let e = exponent_of(a, i)
+        if e > 0
+            list.push(positives, ascii_term(symbols[i], e))
+        elif e < 0
+            list.push(negatives, ascii_term(symbols[i], 0 - e))
+    if list.len(positives) == 0 and list.len(negatives) == 0
+        return ""
+    if list.len(positives) == 0
+        return signed_ascii(a)
+    var out = str.join(positives, "*")
+    for n in negatives
+        out = out + "/" + n
+    out
+
+// The ASCII form of a dimension with no positive exponent, each factor
+// carrying its own sign — `s^-1`.
+fn signed_ascii(a: UnDim) -> Str
+    let symbols = base_symbols()
+    var parts: [Str] = []
+    for i in 0..7
+        let e = exponent_of(a, i)
+        if e != 0
+            list.push(parts, ascii_term(symbols[i], e))
+    str.join(parts, "*")
 
 // The name a dimension has, when it has one — `velocity`, `pressure`,
 // or the empty string.
 pub fn dim_name(a: UnDim) -> Str
-    todo("units-nv.undim.dim_name")
+    for named in named_dims()
+        if dim_eq(a, named.0)
+            return named.1
+    ""
 
 // The exponent of one base, by index `0..6` in the order the struct
 // declares them.
@@ -270,8 +418,10 @@ pub fn dim_name(a: UnDim) -> Str
 // Published because the algebra above is written over the seven fields
 // and a caller doing its own arithmetic should not re-derive the order.
 pub fn exponent_at(a: UnDim, index: Int) -> Result<Int, UnFault>
-    todo("units-nv.undim.exponent_at")
+    if index < 0 or index > 6
+        return Err(UnExponentOutOfRange(index))
+    Ok(exponent_of(a, index))
 
 // The base symbols, in order — `m`, `kg`, `s`, `A`, `K`, `mol`, `cd`.
 pub fn base_symbols() -> [Str]
-    todo("units-nv.undim.base_symbols")
+    ["m", "kg", "s", "A", "K", "mol", "cd"]

@@ -1,9 +1,6 @@
 // undim_tests.nv — the seven bases, the derived dimensions the static
 // set names, and the ways a dimension is written out.
 //
-// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
-// assertion here reaches `not implemented: units-nv.<module>.<fn>`.
-//
 // Each derived dimension is checked against the seven exponents its doc
 // comment gives, built with `undim.dim`, so the table and the algebra
 // cannot drift apart without one of these going red.
@@ -33,8 +30,8 @@ fn test_each_base_dimension_is_one_exponent_of_one() [io]
     test.assert(undim.is_base(undim.luminous()))
 
     test.case("and a derived dimension or the dimensionless one is not")
-    test.assert(undim.is_base(undim.velocity()) == false)
-    test.assert(undim.is_base(undim.scalar()) == false)
+    test.assert(not undim.is_base(undim.velocity()))
+    test.assert(not undim.is_base(undim.scalar()))
 
 @test
 fn test_each_derived_dimension_has_the_exponents_its_unit_names() [io]
@@ -74,9 +71,9 @@ fn test_each_derived_dimension_has_the_exponents_its_unit_names() [io]
 @test
 fn test_an_angle_cannot_be_told_apart_from_a_ratio_by_its_dimension() [io]
     test.case("the answer is always false, because a radian's dimension is the dimensionless one")
-    test.assert(undim.is_angle_like(undim.scalar()) == false)
-    test.assert(undim.is_angle_like(undim.dim_divide(undim.length(), undim.length())) == false)
-    test.assert(undim.is_angle_like(undim.length()) == false)
+    test.assert(not undim.is_angle_like(undim.scalar()))
+    test.assert(not undim.is_angle_like(undim.dim_divide(undim.length(), undim.length())))
+    test.assert(not undim.is_angle_like(undim.length()))
 
 @test
 fn test_a_dimension_is_written_in_the_si_base_symbols() [io]

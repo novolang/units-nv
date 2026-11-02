@@ -1,8 +1,6 @@
 // undyn.nv — the dynamic quantity: a magnitude, a dimension carried as
 // a value, and the bridge to and from the typed half.
 //
-// Every body here is a `todo()`; the signatures are the design.
-//
 // **THE DYNAMIC HALF IS EVERYTHING THE STATIC SET CANNOT NAME**, and
 // the boundary between them is not a matter of taste: it is drawn by
 // what the language's unboxed representation can hold.
@@ -43,6 +41,10 @@
 // then format the identity, and what makes a configuration file survive
 // a round trip through a tool that only changed one value.
 
+use undim
+use unfault
+use unqty
+
 // A quantity whose dimension is a value.
 pub struct UnDyn
     // The magnitude, in the SI base units of `dim`.
@@ -68,35 +70,54 @@ pub struct UnDyn
 //     println("${undyn.si_of(q)}")
 // ```
 pub fn of_si(si: Float, d: UnDim) -> UnDyn
-    todo("units-nv.undyn.of_si")
+    UnDyn { si: si, dim: d, written_as: "" }
 
 // A quantity that remembers its spelling.
 pub fn of_si_written(si: Float, d: UnDim, written_as: Str) -> UnDyn
-    todo("units-nv.undyn.of_si_written")
+    UnDyn { si: si, dim: d, written_as: written_as }
 
 // A dimensionless quantity — a plain number.
 pub fn of_number(v: Float) -> UnDyn
-    todo("units-nv.undyn.of_number")
+    UnDyn { si: v, dim: undim.scalar(), written_as: "" }
 
 // The magnitude in SI base units.
 pub fn si_of(q: UnDyn) -> Float
-    todo("units-nv.undyn.si_of")
+    q.si
 
 // The dimension.
 pub fn dim_of(q: UnDyn) -> UnDim
-    todo("units-nv.undyn.dim_of")
+    q.dim
 
 // The unit expression it was written in, or the empty string.
 pub fn written_as(q: UnDyn) -> Str
-    todo("units-nv.undyn.written_as")
+    q.written_as
 
 // Whether a quantity has a dimension.
 pub fn has_dim(q: UnDyn, d: UnDim) -> Bool
-    todo("units-nv.undyn.has_dim")
+    undim.dim_eq(q.dim, d)
 
 // Whether a quantity is a plain number.
 pub fn is_number(q: UnDyn) -> Bool
-    todo("units-nv.undyn.is_number")
+    undim.is_dimensionless(q.dim)
+
+// ── Private helpers ─────────────────────────────────────────────────
+
+// The magnitude's own `n`-th root, with the dimension already rooted.
+//
+// An EVEN root of a negative magnitude has no real answer and answers a
+// NaN, which is what IEEE 754 says and what `math.sqrt` of a negative
+// number already does — the alternative would be a fault whose variant
+// list has nothing to say about a magnitude.  An ODD root of a negative
+// number is real and is answered: `math.pow` of a negative base with a
+// fractional exponent is a NaN on the C library, so the sign is taken
+// out by hand.
+fn rooted(si: Float, n: Int, d: UnDim) -> UnDyn
+    if si < 0.0 and n % 2 == 0
+        return of_si(math.nan(), d)
+    let magnitude = math.pow(math.abs(si), 1.0 / n as Float)
+    if si < 0.0
+        return of_si(0.0 - magnitude, d)
+    of_si(magnitude, d)
 
 // ── The arithmetic, where the dimensions travel with the values ─────
 
@@ -107,11 +128,15 @@ pub fn is_number(q: UnDyn) -> Bool
 // adding a length to a time is a run-time refusal rather than a
 // compile-time one.  `UnWrongDimension` carries both, rendered.
 pub fn add(a: UnDyn, b: UnDyn) -> Result<UnDyn, UnFault>
-    todo("units-nv.undyn.add")
+    if not undim.dim_eq(a.dim, b.dim)
+        return Err(unfault.wrong_dimension(a.dim, b.dim))
+    Ok(of_si(a.si + b.si, a.dim))
 
 // Two quantities subtracted.
 pub fn sub(a: UnDyn, b: UnDyn) -> Result<UnDyn, UnFault>
-    todo("units-nv.undyn.sub")
+    if not undim.dim_eq(a.dim, b.dim)
+        return Err(unfault.wrong_dimension(a.dim, b.dim))
+    Ok(of_si(a.si - b.si, a.dim))
 
 // Two quantities multiplied.
 //
@@ -119,39 +144,43 @@ pub fn sub(a: UnDyn, b: UnDyn) -> Result<UnDyn, UnFault>
 // than an inconsistency: any two dimensions can be multiplied — the
 // exponents add — and only equal ones can be added.
 pub fn multiply(a: UnDyn, b: UnDyn) -> UnDyn
-    todo("units-nv.undyn.multiply")
+    of_si(a.si * b.si, undim.dim_multiply(a.dim, b.dim))
 
 // Two quantities divided.
 //
 // Total for the same reason.  Division by a zero magnitude answers an
 // infinity, which is IEEE 754 and is what `Float` division does.
 pub fn divide(a: UnDyn, b: UnDyn) -> UnDyn
-    todo("units-nv.undyn.divide")
+    of_si(a.si / b.si, undim.dim_divide(a.dim, b.dim))
 
 // A quantity raised to an integer power.
 pub fn power(a: UnDyn, n: Int) -> UnDyn
-    todo("units-nv.undyn.power")
+    of_si(math.pow(a.si, n as Float), undim.dim_power(a.dim, n))
 
 // A quantity's `n`-th root.
 //
 // Fails when the dimension's exponents do not divide — the square root
-// of a velocity is not a quantity SI can name.  The magnitude's own
-// root of a negative number fails too, and the two are different
-// faults.
+// of a velocity is not a quantity SI can name — and that is the only
+// refusal here.  A negative magnitude is NOT a fault: an odd root of a
+// negative number is real and is answered, and an even root of one has
+// no real answer and answers the NaN that `math.sqrt` answers for the
+// same number.  A dimension is what this call can refuse, and a
+// magnitude is not.
 pub fn root(a: UnDyn, n: Int) -> Result<UnDyn, UnFault>
-    todo("units-nv.undyn.root")
+    let d = undim.dim_root(a.dim, n)!
+    Ok(rooted(a.si, n, d))
 
 // A quantity scaled by a plain number.
 pub fn scale(a: UnDyn, k: Float) -> UnDyn
-    todo("units-nv.undyn.scale")
+    of_si(a.si * k, a.dim)
 
 // The negation.
 pub fn negate(a: UnDyn) -> UnDyn
-    todo("units-nv.undyn.negate")
+    of_si(0.0 - a.si, a.dim)
 
 // The absolute value.
 pub fn absolute(a: UnDyn) -> UnDyn
-    todo("units-nv.undyn.absolute")
+    of_si(math.abs(a.si), a.dim)
 
 // ── Comparison ──────────────────────────────────────────────────────
 
@@ -162,7 +191,7 @@ pub fn absolute(a: UnDyn) -> UnDyn
 // caller wants and the reason the magnitude is not stored in the unit
 // it was written in.
 pub fn eq(a: UnDyn, b: UnDyn) -> Bool
-    todo("units-nv.undyn.eq")
+    undim.dim_eq(a.dim, b.dim) and a.si == b.si
 
 // Whether two quantities are equal within a relative tolerance.
 //
@@ -171,7 +200,17 @@ pub fn eq(a: UnDyn, b: UnDyn) -> Bool
 // an absolute tolerance is meaningless across dimensions: a tolerance
 // of 0.001 is tight for a metre and absurd for a pascal.
 pub fn near(a: UnDyn, b: UnDyn, relative_tolerance: Float) -> Bool
-    todo("units-nv.undyn.near")
+    if not undim.dim_eq(a.dim, b.dim)
+        return false
+    let gap = math.abs(a.si - b.si)
+    let here = math.abs(a.si)
+    let there = math.abs(b.si)
+    var big = there
+    if here > there
+        big = here
+    if big == 0.0
+        return gap == 0.0
+    gap <= relative_tolerance * big
 
 // How two quantities of the same dimension order.
 //
@@ -180,7 +219,13 @@ pub fn near(a: UnDyn, b: UnDyn, relative_tolerance: Float) -> Bool
 // and a library that answered one would sort a list wrongly and
 // silently.
 pub fn compare(a: UnDyn, b: UnDyn) -> Result<Ordering, UnFault>
-    todo("units-nv.undyn.compare")
+    if not undim.dim_eq(a.dim, b.dim)
+        return Err(unfault.wrong_dimension(a.dim, b.dim))
+    if a.si < b.si
+        return Ok(Less)
+    if a.si > b.si
+        return Ok(Greater)
+    Ok(Equal)
 
 // ── The bridge ──────────────────────────────────────────────────────
 
@@ -209,7 +254,9 @@ pub fn compare(a: UnDyn, b: UnDyn) -> Result<Ordering, UnFault>
 //     println("a fallible bridge answers a raw, and the constructor cannot fail")
 // ```
 pub fn require(q: UnDyn, want: UnDim) -> Result<Float, UnFault>
-    todo("units-nv.undyn.require")
+    if not undim.dim_eq(q.dim, want)
+        return Err(unfault.wrong_dimension(want, q.dim))
+    Ok(q.si)
 
 // The magnitude in SI base units, or a fallback when the dimension is
 // wrong.
@@ -219,7 +266,9 @@ pub fn require(q: UnDyn, want: UnDim) -> Result<Float, UnFault>
 // Published beside `require` so the choice between failing and
 // defaulting is made at the call site rather than by this package.
 pub fn require_or(q: UnDyn, want: UnDim, fallback: Float) -> Float
-    todo("units-nv.undyn.require_or")
+    if undim.dim_eq(q.dim, want)
+        return q.si
+    fallback
 
 // A dynamic quantity from a typed length.
 //
@@ -227,43 +276,43 @@ pub fn require_or(q: UnDyn, want: UnDim, fallback: Float) -> Float
 // `unqty`'s accessors are: there is no trait a one-field `@value`
 // struct could carry that a generic function could reach through.
 pub fn of_length(q: UnLength) -> UnDyn
-    todo("units-nv.undyn.of_length")
+    of_si(unqty.length_si(q), unqty.length_dim())
 
 // A dynamic quantity from a typed mass.
 pub fn of_mass(q: UnMass) -> UnDyn
-    todo("units-nv.undyn.of_mass")
+    of_si(unqty.mass_si(q), unqty.mass_dim())
 
 // A dynamic quantity from a typed time.
 pub fn of_time(q: UnTime) -> UnDyn
-    todo("units-nv.undyn.of_time")
+    of_si(unqty.time_si(q), unqty.time_dim())
 
 // A dynamic quantity from a typed temperature.
 pub fn of_temperature(q: UnTemperature) -> UnDyn
-    todo("units-nv.undyn.of_temperature")
+    of_si(unqty.temperature_si(q), undim.temperature())
 
 // A dynamic quantity from a typed velocity.
 pub fn of_velocity(q: UnVelocity) -> UnDyn
-    todo("units-nv.undyn.of_velocity")
+    of_si(unqty.velocity_si(q), unqty.velocity_dim())
 
 // A dynamic quantity from a typed acceleration.
 pub fn of_acceleration(q: UnAcceleration) -> UnDyn
-    todo("units-nv.undyn.of_acceleration")
+    of_si(unqty.acceleration_si(q), undim.acceleration())
 
 // A dynamic quantity from a typed force.
 pub fn of_force(q: UnForce) -> UnDyn
-    todo("units-nv.undyn.of_force")
+    of_si(unqty.force_si(q), unqty.force_dim())
 
 // A dynamic quantity from a typed energy.
 pub fn of_energy(q: UnEnergy) -> UnDyn
-    todo("units-nv.undyn.of_energy")
+    of_si(unqty.energy_si(q), unqty.energy_dim())
 
 // A dynamic quantity from a typed power.
 pub fn of_power(q: UnPower) -> UnDyn
-    todo("units-nv.undyn.of_power")
+    of_si(unqty.power_si(q), undim.power())
 
 // A dynamic quantity from a typed pressure.
 pub fn of_pressure(q: UnPressure) -> UnDyn
-    todo("units-nv.undyn.of_pressure")
+    of_si(unqty.pressure_si(q), unqty.pressure_dim())
 
 // Whether this quantity can become a typed one at all.
 //
@@ -272,7 +321,7 @@ pub fn of_pressure(q: UnPressure) -> UnDyn
 // "no static type for m·s⁻³" rather than a dimension mismatch against
 // whichever type it guessed.
 pub fn has_static_type(q: UnDyn) -> Bool
-    todo("units-nv.undyn.has_static_type")
+    undim.has_static_type(q.dim)
 
 // The name of the static type this quantity's dimension maps to, or the
 // empty string — `UnVelocity`, `UnPressure`.
@@ -281,4 +330,9 @@ pub fn has_static_type(q: UnDyn) -> Bool
 // configuration schema of quantities and emits typed accessors needs
 // exactly this.
 pub fn static_type_name(q: UnDyn) -> Str
-    todo("units-nv.undyn.static_type_name")
+    if undim.is_dimensionless(q.dim)
+        return "UnAngle"
+    let named = undim.dim_name(q.dim)
+    if named == ""
+        return ""
+    "Un" + str.upper(str.slice(named, 0, 1)) + str.slice(named, 1, str.len(named))

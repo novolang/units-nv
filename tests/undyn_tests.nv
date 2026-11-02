@@ -1,9 +1,6 @@
 // undyn_tests.nv — the dynamic quantity: building one, the arithmetic
 // that can be refused, comparison, and the crossing from each typed
 // quantity.
-//
-// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
-// assertion here reaches `not implemented: units-nv.<module>.<fn>`.
 
 use std.test
 use undim
@@ -19,7 +16,7 @@ fn test_a_dynamic_quantity_is_built_from_a_magnitude_and_a_dimension() [io]
 
     test.case("it has the dimension it was built with and no other")
     test.assert(undyn.has_dim(q, undim.length()))
-    test.assert(undyn.has_dim(q, undim.time()) == false)
+    test.assert(not undyn.has_dim(q, undim.time()))
 
     test.case("a plain number is dimensionless and carries no spelling")
     let n = undyn.of_number(3.5)
@@ -56,17 +53,17 @@ fn test_equality_is_same_dimension_and_same_magnitude_in_si() [io]
     test.assert(undyn.eq(a, b))
 
     test.case("one metre and one second are not, whatever the magnitudes")
-    test.assert(undyn.eq(undyn.of_si(1.0, undim.length()),
-                         undyn.of_si(1.0, undim.time())) == false)
+    test.assert(not undyn.eq(undyn.of_si(1.0, undim.length()),
+                             undyn.of_si(1.0, undim.time())))
 
     test.case("near takes a relative tolerance")
     let x = undyn.of_si(100.0, undim.pressure())
     let y = undyn.of_si(100.05, undim.pressure())
     test.assert(undyn.near(x, y, 0.001))
-    test.assert(undyn.near(x, y, 0.0001) == false)
+    test.assert(not undyn.near(x, y, 0.0001))
 
     test.case("and two quantities of different dimensions are never near")
-    test.assert(undyn.near(x, undyn.of_si(100.0, undim.length()), 0.5) == false)
+    test.assert(not undyn.near(x, undyn.of_si(100.0, undim.length()), 0.5))
 
 @test
 fn test_each_typed_quantity_crosses_into_the_dynamic_half_with_its_dimension() [io]
@@ -115,5 +112,5 @@ fn test_the_static_type_name_is_the_type_a_dimension_maps_to() [io]
 
     test.case("a jerk has no static type, so the name is empty")
     let jerk = undyn.of_si(1.0, undim.dim(1, 0, 0 - 3, 0, 0, 0, 0))
-    test.assert(undyn.has_static_type(jerk) == false)
+    test.assert(not undyn.has_static_type(jerk))
     test.assert_eq_str(undyn.static_type_name(jerk), "")

@@ -1,7 +1,5 @@
 // untext.nv — reading `3.5 km/h` and writing it back.
 //
-// Every body here is a `todo()`; the signatures are the design.
-//
 // THE GRAMMAR, WHOLE, because it is small enough to state and because
 // stating it is what makes the package reviewable:
 //
@@ -44,6 +42,12 @@
 // unit beside it — which is a caller's decision about an audience, and
 // not something a units library can know.
 
+use unconv
+use undim
+use undyn
+use unfault
+use unqty
+
 // How a quantity is written out.
 pub struct UnFormat
     // How many significant digits.  `0` means "as many as round-trip",
@@ -73,12 +77,239 @@ pub struct UnFormat
 //     println("${untext.machine_format().keep_written_unit}")
 // ```
 pub fn machine_format() -> UnFormat
-    todo("units-nv.untext.machine_format")
+    UnFormat { significant_digits: 0, keep_written_unit: true, middle_dot: false,
+               superscripts: false, space_before_unit: true }
 
 // The format a printed table wants: SI's own typography, a fixed number
 // of significant digits.
 pub fn printed_format(significant_digits: Int) -> UnFormat
-    todo("units-nv.untext.printed_format")
+    UnFormat { significant_digits: significant_digits, keep_written_unit: true,
+               middle_dot: true, superscripts: true, space_before_unit: true }
+
+// ── Private helpers ─────────────────────────────────────────────────
+
+// Whether a byte is one of the ten digits.
+fn is_digit(c: Int) -> Bool
+    c >= '0' and c <= '9'
+
+// Whether the two bytes at `at` are the middle dot, `·`.
+//
+// Spelled as its two UTF-8 bytes and not as a character literal,
+// because everything here scans BYTES: a one-byte comparison would
+// stop a symbol in the middle of the character, and `µ` — which shares
+// a lead byte with it — would stop there too.
+fn dot_at(text: Str, at: Int) -> Bool
+    at + 1 < str.len(text) and str.byte_at_or(text, at, 0) == 194
+        and str.byte_at_or(text, at + 1, 0) == 183
+
+// The end of the symbol run starting at `at` — the next space, `*`,
+// `/`, `^` or middle dot.
+fn symbol_end(text: Str, at: Int) -> Int
+    var i = at
+    while i < str.len(text)
+        let c = str.byte_at_or(text, i, 0)
+        if c == ' ' or c == '*' or c == '/' or c == '^'
+            return i
+        if dot_at(text, i)
+            return i
+        i = i + 1
+    i
+
+// The end of the number at the start of `text`, or zero when there is
+// none.
+//
+// A sign, digits, an optional point with its digits, and an optional
+// exponent — the grammar `str.to_float` reads, so this answers exactly
+// the span that call is given.
+fn number_span(text: Str) -> Int
+    var i = 0
+    if i < str.len(text)
+        let c = str.byte_at_or(text, i, 0)
+        if c == '-' or c == '+'
+            i = i + 1
+    let digits_at = i
+    while i < str.len(text) and is_digit(str.byte_at_or(text, i, 0))
+        i = i + 1
+    if i < str.len(text) and str.byte_at_or(text, i, 0) == '.'
+        i = i + 1
+        while i < str.len(text) and is_digit(str.byte_at_or(text, i, 0))
+            i = i + 1
+    if i == digits_at
+        return 0
+    if i < str.len(text)
+        let c = str.byte_at_or(text, i, 0)
+        if c == 'e' or c == 'E'
+            i = exponent_end(text, i)
+    i
+
+// The end of the exponent at `at`, the `e` included — or `at` itself
+// when no digit follows, in which case that `e` was a letter of a
+// symbol and not an exponent.
+fn exponent_end(text: Str, at: Int) -> Int
+    var i = at + 1
+    if i < str.len(text)
+        let c = str.byte_at_or(text, i, 0)
+        if c == '-' or c == '+'
+            i = i + 1
+    let digits_at = i
+    while i < str.len(text) and is_digit(str.byte_at_or(text, i, 0))
+        i = i + 1
+    if i == digits_at
+        return at
+    i
+
+// A number from its text.
+fn number_from(text: Str) -> Result<Float, UnFault>
+    match str.to_float(text)
+        None    => Err(UnBadNumber(text))
+        Some(v) => Ok(v)
+
+// `value` rounded to `digits` significant digits, `digits` below one
+// meaning the value unchanged.
+//
+// Hand-written rather than reached for from a formatting package: the
+// only rounding this package needs is a decimal one, and a log10, a
+// power of ten and a round are the whole of it.  The scaling goes
+// through the side that keeps the power of ten exact — divide for a
+// large magnitude, multiply for a small one — so `1500` at three digits
+// is `1500` and not `1499.9999999999998`.
+fn round_significant(value: Float, digits: Int) -> Float
+    if digits < 1 or value == 0.0 or math.is_nan(value) or math.is_inf(value)
+        return value
+    let magnitude = math.floor(math.log10(math.abs(value)))
+    let places = (digits - 1) as Float
+    let drop = magnitude - places
+    if drop <= 0.0
+        let scale = math.pow(10.0, 0.0 - drop)
+        return math.round(value * scale) / scale
+    let scale = math.pow(10.0, drop)
+    math.round(value / scale) * scale
+
+// A magnitude as text, at the format's precision.  Zero significant
+// digits is the shortest text that reads back as the same `Float`.
+fn number_text(value: Float, f: UnFormat) -> Str
+    if f.significant_digits < 1
+        return str.from_float(value)
+    str.from_float(round_significant(value, f.significant_digits))
+
+// The exponent of base `index`, which is in `0..6` at every call site
+// here — every loop below is bounded by seven, and `exponent_at`
+// refuses everything else.
+fn base_exponent(d: UnDim, index: Int) -> Int
+    match undim.exponent_at(d, index)
+        Ok(e)  => e
+        // cov: skip — every call site counts 0..6, which `exponent_at` accepts, and the header above says why
+        Err(_) => 0
+
+// An exponent as a superscript, sign included — `⁻²`.
+fn sup_digits(e: Int) -> Str
+    let digits = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
+    var n = e
+    if n < 0
+        n = 0 - n
+    let s = str.from_int(n)
+    var out = ""
+    if e < 0
+        out = "⁻"
+    var i = 0
+    while i < str.len(s)
+        out = out + digits[str.byte_at_or(s, i, 0) - '0']
+        i = i + 1
+    out
+
+// One factor of a rendered dimension.
+fn exponent_term(symbol: Str, e: Int, f: UnFormat) -> Str
+    if e == 1
+        return symbol
+    if f.superscripts
+        return symbol + sup_digits(e)
+    "${symbol}^${e}"
+
+// What multiplies two factors: the middle dot SI prints, or the space
+// this grammar reads as a multiplication.
+fn separator(f: UnFormat) -> Str
+    if f.middle_dot
+        return "·"
+    " "
+
+// A dimension written in the format's style.
+//
+// The machine style is `undim.dim_ascii`'s canonical form, `m/s^2`, so
+// the spelling a machine format writes is the one the package already
+// publishes.  Every other combination is built factor by factor here,
+// because the two flags are independent: a caller can want superscripts
+// with the ASCII multiplication, or the middle dot with `^2`.
+fn styled_dim(d: UnDim, f: UnFormat) -> Str
+    if not f.superscripts and not f.middle_dot
+        return undim.dim_ascii(d)
+    let symbols = undim.base_symbols()
+    var parts: [Str] = []
+    for i in 0..7
+        let e = base_exponent(d, i)
+        if e != 0
+            list.push(parts, exponent_term(symbols[i], e, f))
+    str.join(parts, separator(f))
+
+// The unit half of a written quantity.
+//
+// **A FORMAT THAT ASKS FOR SUPERSCRIPTS IS PRINTING SI TYPOGRAPHY, and
+// there the unit is rendered from its DIMENSION** — `m/s^2` prints as
+// `m·s⁻²` whatever it was parsed from, and the same is true of `km/h`.
+// Every other format is machine text, and there the unit is written as
+// its own symbol, verbatim; that is half of what makes parse-then-format
+// the identity, the other half being the magnitude divided back out of
+// SI in the written unit.
+fn unit_text(u: UnUnit, f: UnFormat) -> Str
+    if not f.superscripts and u.symbol != ""
+        return u.symbol
+    styled_dim(u.dim, f)
+
+// A magnitude and a unit, with the format's separator between them.
+fn quantity_text(value: Float, u: UnUnit, f: UnFormat) -> Str
+    let body = unit_text(u, f)
+    if body == ""
+        return number_text(value, f)
+    if f.space_before_unit
+        return number_text(value, f) + " " + body
+    number_text(value, f) + body
+
+// The most bytes a `Float` can take as text: a sign, seventeen digits, a
+// point and an exponent.
+fn number_bound() -> Int
+    26
+
+// One factor of a unit expression, from `at`: the unit, the exponent
+// written on it, and the index just after it.
+fn parse_factor(body: Str, at: Int, whole: Str) -> Result<(UnUnit, Int, Int), UnFault>
+    let start = at
+    var i = symbol_end(body, at)
+    if i == start
+        return Err(UnBadUnitSyntax(start, whole))
+    let sym = str.slice(body, start, i)
+    var e = 1
+    if i < str.len(body) and str.byte_at_or(body, i, 0) == '^'
+        i = i + 1
+        var negative = false
+        if i < str.len(body)
+            let c = str.byte_at_or(body, i, 0)
+            if c == '-'
+                negative = true
+                i = i + 1
+            elif c == '+'
+                i = i + 1
+        let digits_at = i
+        var n = 0
+        while i < str.len(body) and is_digit(str.byte_at_or(body, i, 0))
+            n = n * 10 + (str.byte_at_or(body, i, 0) - '0')
+            i = i + 1
+        if i == digits_at
+            return Err(UnBadUnitSyntax(i, whole))
+        if negative
+            e = 0 - n
+        else
+            e = n
+    let u = unconv.unit_named(sym)!
+    Ok((u, e, i))
 
 // ── Reading ─────────────────────────────────────────────────────────
 
@@ -87,11 +318,21 @@ pub fn printed_format(significant_digits: Int) -> UnFormat
 // A string with no unit answers a dimensionless quantity rather than
 // failing — see this module's header.
 pub fn parse(text: Str) -> Result<UnDyn, UnFault>
-    todo("units-nv.untext.parse")
+    let (number_at, number_len, unit_at, unit_len) = split_text(text)!
+    let piece = str.slice(text, number_at, number_at + number_len)
+    let value = number_from(piece)!
+    if unit_len == 0
+        return Ok(undyn.of_number(value))
+    let written = str.slice(text, unit_at, unit_at + unit_len)
+    let u = parse_unit(written)!
+    Ok(undyn.of_si_written(unconv.to_si_absolute(value, u), u.dim, written))
 
 // A quantity from its text, with a unit required.
 pub fn parse_required(text: Str) -> Result<UnDyn, UnFault>
-    todo("units-nv.untext.parse_required")
+    let q = parse(text)!
+    if undyn.written_as(q) == ""
+        return Err(UnMissingUnit(text))
+    Ok(q)
 
 // A quantity from its text, required to have a dimension.
 //
@@ -99,14 +340,73 @@ pub fn parse_required(text: Str) -> Result<UnDyn, UnFault>
 // duration, so a value of `3.5 km` is an error the reader can report
 // against the FIELD rather than three layers later.
 pub fn parse_as(text: Str, want: UnDim) -> Result<UnDyn, UnFault>
-    todo("units-nv.untext.parse_as")
+    let q = parse(text)!
+    if not undim.dim_eq(undyn.dim_of(q), want)
+        return Err(UnWrongDimension(want, undyn.dim_of(q)))
+    Ok(q)
 
 // A unit expression alone, with no magnitude.
 //
 // For a schema that declares a field's unit, and for a caller
 // validating a string a person typed into a unit box.
 pub fn parse_unit(text: Str) -> Result<UnUnit, UnFault>
-    todo("units-nv.untext.parse_unit")
+    let body = str.trim(text)
+    if str.len(body) == 0
+        return Err(UnBadUnitSyntax(0, text))
+    let (head, head_exp, head_end) = parse_factor(body, 0, text)!
+    var dim = undim.dim_power(head.dim, head_exp)
+    var factor = math.pow(head.factor, head_exp as Float)
+    var factors = 1
+    var offset = ""
+    var offset_exp = 1
+    var offset_value = 0.0
+    if unconv.has_offset(head)
+        offset = head.symbol
+        offset_exp = head_exp
+        offset_value = head.offset
+    var at = head_end
+    while at < str.len(body)
+        var spaced = false
+        while at < str.len(body) and str.byte_at_or(body, at, 0) == ' '
+            spaced = true
+            at = at + 1
+        // cov: skip — `body` is trimmed, so a run of spaces can never end it, and the operator below always has a byte to read
+        if at >= str.len(body)
+            break
+        var divisor = false
+        let c = str.byte_at_or(body, at, 0)
+        if c == '*'
+            at = at + 1
+        elif c == '/'
+            divisor = true
+            at = at + 1
+        elif dot_at(body, at)
+            at = at + 2
+        elif not spaced
+            return Err(UnBadUnitSyntax(at, text))
+        while at < str.len(body) and str.byte_at_or(body, at, 0) == ' '
+            at = at + 1
+        if at >= str.len(body)
+            return Err(UnBadUnitSyntax(at, text))
+        let (u, e, next) = parse_factor(body, at, text)!
+        if unconv.has_offset(u)
+            offset = u.symbol
+            offset_exp = e
+            offset_value = u.offset
+        if divisor
+            dim = undim.dim_divide(dim, undim.dim_power(u.dim, e))
+            factor = factor / math.pow(u.factor, e as Float)
+        else
+            dim = undim.dim_multiply(dim, undim.dim_power(u.dim, e))
+            factor = factor * math.pow(u.factor, e as Float)
+        factors = factors + 1
+        at = next
+    if offset != ""
+        if offset_exp != 1
+            return Err(UnOffsetUnitWithExponent(offset, offset_exp))
+        if factors > 1
+            return Err(UnOffsetUnitInExpression(offset))
+    Ok(unconv.custom_unit(body, dim, factor, offset_value))
 
 // A dimension from a unit expression, without resolving the scale.
 //
@@ -115,7 +415,8 @@ pub fn parse_unit(text: Str) -> Result<UnUnit, UnFault>
 // not care whether a field is in `m/s` or `km/h`, only that it is a
 // speed.
 pub fn parse_dim(text: Str) -> Result<UnDim, UnFault>
-    todo("units-nv.untext.parse_dim")
+    let u = parse_unit(text)!
+    Ok(u.dim)
 
 // The magnitude and the unit expression, as two spans into the caller's
 // own string.
@@ -125,7 +426,17 @@ pub fn parse_dim(text: Str) -> Result<UnDim, UnFault>
 // only the number changed.  Answers `(number_start, number_len,
 // unit_start, unit_len)`.
 pub fn split_text(text: Str) -> Result<(Int, Int, Int, Int), UnFault>
-    todo("units-nv.untext.split_text")
+    let number_len = number_span(text)
+    if number_len == 0
+        return Err(UnBadNumber(text))
+    var at = number_len
+    while at < str.len(text) and str.byte_at_or(text, at, 0) == ' '
+        at = at + 1
+    let unit_at = at
+    var unit_end = str.len(text)
+    while unit_end > unit_at and str.byte_at_or(text, unit_end - 1, 0) == ' '
+        unit_end = unit_end - 1
+    Ok((0, number_len, unit_at, unit_end - unit_at))
 
 // ── Writing ─────────────────────────────────────────────────────────
 
@@ -138,11 +449,20 @@ pub fn split_text(text: Str) -> Result<(Int, Int, Int, Int), UnFault>
 // right in a CAD file and `1 µm` is right in a report, and no library
 // knows which it is in.
 pub fn format(q: UnDyn, f: UnFormat) -> Str
-    todo("units-nv.untext.format")
+    let written = undyn.written_as(q)
+    if f.keep_written_unit and written != ""
+        match parse_unit(written)
+            Err(_) => ()
+            Ok(u)  =>
+                if undim.dim_eq(u.dim, undyn.dim_of(q))
+                    return quantity_text(unconv.from_si_absolute(undyn.si_of(q), u), u, f)
+    quantity_text(undyn.si_of(q), unconv.base_unit(undyn.dim_of(q)), f)
 
 // A quantity as text in a named unit.
 pub fn format_in(q: UnDyn, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
-    todo("units-nv.untext.format_in")
+    if not undim.dim_eq(u.dim, undyn.dim_of(q))
+        return Err(UnWrongDimension(u.dim, undyn.dim_of(q)))
+    Ok(quantity_text(unconv.from_si_absolute(undyn.si_of(q), u), u, f))
 
 // A quantity written into a cursor the caller sized.
 //
@@ -150,15 +470,21 @@ pub fn format_in(q: UnDyn, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
 // one buffer — a report, a CSV, a log line.  `format_bound` sizes it,
 // and a cursor with less room writes NOTHING.
 pub fn format_into(q: UnDyn, f: UnFormat, var dst: Cursor) -> Result<Int, UnFault>
-    todo("units-nv.untext.format_into")
+    let text = format(q, f)
+    let need = str.len(text)
+    let have = dst.remaining()
+    if need > have
+        return Err(UnBufferTooSmall(need, have))
+    dst.put_bytes(bytes.from_str(text))
+    Ok(need)
 
 // An upper bound on the bytes a formatted quantity needs.
 pub fn format_bound(q: UnDyn, f: UnFormat) -> Int
-    todo("units-nv.untext.format_bound")
+    number_bound() + str.len(format(q, f))
 
 // A unit expression as text.
 pub fn format_unit(u: UnUnit, f: UnFormat) -> Str
-    todo("units-nv.untext.format_unit")
+    styled_dim(u.dim, f)
 
 // ── The typed half ──────────────────────────────────────────────────
 
@@ -167,15 +493,18 @@ pub fn format_unit(u: UnUnit, f: UnFormat) -> Str
 // One per static type, for the reason every other per-type function in
 // this package exists.
 pub fn format_length(q: UnLength, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
-    todo("units-nv.untext.format_length")
+    let v = unconv.length_in(q, u)!
+    Ok(quantity_text(v, u, f))
 
 // A typed duration as text, in a named unit.
 pub fn format_time(q: UnTime, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
-    todo("units-nv.untext.format_time")
+    let v = unconv.time_in(q, u)!
+    Ok(quantity_text(v, u, f))
 
 // A typed speed as text, in a named unit.
 pub fn format_velocity(q: UnVelocity, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
-    todo("units-nv.untext.format_velocity")
+    let v = unconv.velocity_in(q, u)!
+    Ok(quantity_text(v, u, f))
 
 // An ABSOLUTE temperature as text.
 //
@@ -183,11 +512,13 @@ pub fn format_velocity(q: UnVelocity, u: UnUnit, f: UnFormat) -> Result<Str, UnF
 // `format_temp_delta` is the other one, and the two exist separately
 // for the same reason their conversions do.
 pub fn format_temperature(q: UnTemperature, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
-    todo("units-nv.untext.format_temperature")
+    let v = unconv.temperature_in(q, u)!
+    Ok(quantity_text(v, u, f))
 
 // A temperature DIFFERENCE as text.
 pub fn format_temp_delta(q: UnTempDelta, u: UnUnit, f: UnFormat) -> Result<Str, UnFault>
-    todo("units-nv.untext.format_temp_delta")
+    let v = unconv.temp_delta_in(q, u)!
+    Ok(quantity_text(v, u, f))
 
 // ── Round-tripping ──────────────────────────────────────────────────
 
@@ -199,7 +530,9 @@ pub fn format_temp_delta(q: UnTempDelta, u: UnUnit, f: UnFormat) -> Result<Str, 
 // about to write into a file somebody else will read.  False when
 // `significant_digits` is set low enough to lose the magnitude.
 pub fn round_trips(q: UnDyn, f: UnFormat) -> Bool
-    todo("units-nv.untext.round_trips")
+    match parse(format(q, f))
+        Err(_)   => false
+        Ok(back) => undyn.eq(back, q)
 
 // Whether a string is one this parser accepts.
 //
@@ -207,4 +540,6 @@ pub fn round_trips(q: UnDyn, f: UnFormat) -> Bool
 // field, a schema check — where the fault matters and the value does
 // not yet.
 pub fn is_quantity(text: Str) -> Bool
-    todo("units-nv.untext.is_quantity")
+    match parse(text)
+        Ok(_)  => true
+        Err(_) => false

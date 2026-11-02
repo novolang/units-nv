@@ -1,0 +1,698 @@
+// units_edge_tests.nv — the paths the six oracle suites do not walk.
+//
+// The six suites beside this one are the specification: they assert what
+// a caller reads in the README.  This one is the coverage suite, and it
+// holds the edges their assertions leave out — a number written with a
+// sign or an exponent, an exponent written with a sign, the unit grammar
+// as a grammar rather than as the three spellings the README shows, the
+// branch of the significant-digit rounder that scales a small magnitude
+// up instead of a large one down, and one refusal of each of the
+// thirteen kinds so that `is_dimensional` sorts them all.
+//
+// **BOTH TEMPERATURE PATHS ARE ASSERTED HERE AND IN THE ORACLE
+// SUITES.**  The offset applies to an absolute temperature and must not
+// apply to a difference, and the classic bug is an implementation that
+// applies it to both; every assertion below that names `°C` or `°F`
+// comes in the pair, and a `to_si_delta` that applied the offset would
+// be wrong by 273.15 and go red here.
+//
+// **THE ROUND TRIP IS WHERE PRECISION DIES, SO THE WHOLE CHAIN IS
+// WALKED HERE**: parse, convert to another unit of the dimension,
+// format, parse again — once on a magnitude that does not divide evenly
+// in the target unit (`3.5 km/h` in `m/s`) and once on a negative one.
+// The machine format agrees to the bit and the printed format to the
+// digits it states, which is asserted as the difference it is.
+//
+// Two things are built rather than reached.  `UnFormat` is constructed
+// with flags the two published constructors do not combine — the source
+// says the flags are independent, and this suite is where that is
+// shown.  `UnNoStaticType` is constructed because no function in this
+// package answers it: the interface has no `require_static`, so the
+// variant is one a caller builds for its own dimension check, and this
+// suite is a caller.
+//
+// Three lines under `src/` cannot be reached at all and carry a
+// `cov: skip` marker with the reason; they are named in the CHANGELOG.
+//
+// Seven cases at the end of the file were written after the mutation
+// battery, each because breaking the line it names left all seven
+// suites green: the exponent of one in `is_base`, the dimension guard
+// in `untext.format`, the field-by-field conjunction in `dim_eq`, the
+// number slot `format_bound` adds to the text, the inclusive end of
+// `near`, the dimensionless case of `has_static_type`, the absolute
+// reading of `dyn_in`, and which dimension comes first in a mismatch —
+// the last on each of the three paths that build one.
+
+use std.test
+use std.bytes
+use std.list
+use std.math
+use std.str
+use undim
+use undyn
+use unqty
+use unconv
+use unconv.{ UnUnit }
+use unfault
+use untext
+use untext.{ UnFormat }
+use unfault.{ UnNoStaticType }
+
+@test
+fn test_a_dimension_renders_in_both_styles_and_a_root_of_order_zero_is_refused() [io]
+    test.case("the superscript form writes a positive exponent, not only a negative one")
+    test.assert_eq_str(undim.dim_text(undim.area()), "m²")
+
+    test.case("a dimension with no positive exponent carries the sign on each factor")
+    test.assert_eq_str(undim.dim_ascii(undim.frequency()), "s^-1")
+
+    test.case("and a plain number renders as the empty string in the ASCII form")
+    test.assert_eq_str(undim.dim_ascii(undim.scalar()), "")
+
+    test.case("a root of order zero is a power, and a power belongs to `dim_power`")
+    match undim.dim_root(undim.length(), 0)
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert(unfault.is_dimensional(f))
+
+@test
+fn test_a_root_and_a_power_travel_with_the_dimension() [io]
+    test.case("the square root of an area is a length")
+    match undyn.root(undyn.of_si(4.0, undim.area()), 2)
+        Ok(q)  =>
+            test.assert(undyn.si_of(q) == 2.0)
+            test.assert(undyn.has_dim(q, undim.length()))
+        Err(_) => test.assert(false)
+
+    test.case("an odd root of a negative magnitude is real and is answered")
+    match undyn.root(undyn.of_si(0.0 - 8.0, undim.volume()), 3)
+        Ok(q)  => test.assert_approx(undyn.si_of(q), 0.0 - 2.0, 1.0e-12)
+        Err(_) => test.assert(false)
+
+    test.case("and an even root of one has no real answer and answers a NaN")
+    match undyn.root(undyn.of_si(0.0 - 4.0, undim.area()), 2)
+        Ok(q)  => test.assert(math.is_nan(undyn.si_of(q)))
+        Err(_) => test.assert(false)
+
+    test.case("a dimension whose exponents do not divide is the refusal")
+    match undyn.root(undyn.of_si(1.0, undim.velocity()), 2)
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert(unfault.is_dimensional(f))
+
+    test.case("a power raises the magnitude and the exponents together")
+    let cubed = undyn.power(undyn.of_si(2.0, undim.length()), 3)
+    test.assert(undyn.si_of(cubed) == 8.0)
+    test.assert(undyn.has_dim(cubed, undim.volume()))
+
+@test
+fn test_scaling_negation_and_the_absolute_value_keep_the_dimension() [io]
+    let negative = undyn.of_si(0.0 - 3.0, undim.time())
+
+    test.case("a scale multiplies the magnitude and moves nothing else")
+    let scaled = undyn.scale(negative, 4.0)
+    test.assert(scaled.si == 0.0 - 12.0)
+    test.assert(undyn.has_dim(scaled, undim.time()))
+
+    test.case("the absolute value is the magnitude without its sign")
+    let size = undyn.absolute(negative)
+    test.assert(size.si == 3.0)
+    test.assert(undyn.has_dim(size, undim.time()))
+
+@test
+fn test_the_three_way_comparison_orders_only_one_dimension() [io]
+    let one = undyn.of_si(1.0, undim.length())
+    let two = undyn.of_si(2.0, undim.length())
+
+    test.case("less, more and equal")
+    match undyn.compare(one, two)
+        Ok(o)  => test.assert(o == Less)
+        Err(_) => test.assert(false)
+
+    match undyn.compare(two, one)
+        Ok(o)  => test.assert(o == Greater)
+        Err(_) => test.assert(false)
+
+    match undyn.compare(one, undyn.of_si(1.0, undim.length()))
+        Ok(o)  => test.assert(o == Equal)
+        Err(_) => test.assert(false)
+
+    test.case("and a metre and a second do not order at all")
+    match undyn.compare(one, undyn.of_si(1.0, undim.time()))
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert(unfault.is_dimensional(f))
+
+@test
+fn test_near_is_relative_and_two_zeros_are_near_at_any_tolerance() [io]
+    test.case("the larger of the two magnitudes is the scale")
+    test.assert(undyn.near(undyn.of_si(10.0, undim.length()),
+                           undyn.of_si(1.0, undim.length()), 10.0))
+
+    test.case("two zeros are near each other, and a zero is not near a one")
+    let zero = undyn.of_si(0.0, undim.length())
+    test.assert(undyn.near(zero, undyn.of_si(0.0, undim.length()), 0.0))
+    test.assert(not undyn.near(zero, undyn.of_si(1.0, undim.length()), 1.0e-9))
+
+    test.case("and quantities of different dimensions are never near")
+    test.assert(not undyn.near(zero, undyn.of_si(0.0, undim.time()), 1.0))
+
+@test
+fn test_the_bridge_answers_a_raw_magnitude_and_a_type_name() [io]
+    let falling = undyn.of_si(9.81, undim.acceleration())
+
+    test.case("`require_or` answers the magnitude when the dimension is the one wanted")
+    test.assert(undyn.require_or(falling, undim.acceleration(), 0.0) == 9.81)
+
+    test.case("and the fallback when it is not")
+    test.assert(undyn.require_or(falling, undim.length(), 0.0) == 0.0)
+
+    test.case("a plain number names the angle, the one dimensionless type")
+    test.assert_eq_str(undyn.static_type_name(undyn.of_number(1.0)), "UnAngle")
+
+    test.case("a named dimension names its type, and an unnamed one names nothing")
+    test.assert_eq_str(undyn.static_type_name(undyn.of_si(1.0, undim.velocity())), "UnVelocity")
+    test.assert_eq_str(undyn.static_type_name(undyn.of_si(1.0, undim.luminous())), "UnLuminous")
+    test.assert_eq_str(undyn.static_type_name(undyn.of_si(1.0, undim.dim(0, 0, 0, 1, 0, 0, 1))), "")
+
+@test
+fn test_a_coherent_unit_and_the_base_unit_of_a_dimension_with_no_table() [io]
+    test.case("the ampere is a coherent unit and is in no table")
+    match unconv.unit_named("A")
+        Err(_) => test.assert(false)
+        Ok(u)  => test.assert(undim.dim_eq(u.dim, undim.current()))
+
+    test.case("so the base unit of the current is the ampere")
+    test.assert_eq_str(unconv.base_unit(undim.current()).symbol, "A")
+
+    test.case("and the base unit of a plain number is no symbol at all")
+    test.assert_eq_str(unconv.base_unit(undim.scalar()).symbol, "")
+
+    test.case("a dimension in no table and in no coherent list takes its ASCII name")
+    test.assert_eq_str(unconv.base_unit(undim.dim(0, 0, 0, 1, 0, 0, 1)).symbol, "A*cd")
+
+@test
+fn test_the_prefix_rules_name_the_unit_that_takes_no_prefix() [io]
+    test.case("a bare unit asked for the prefix it carries answers itself")
+    match unconv.split_prefix("min")
+        Err(_) => test.assert(false)
+        Ok(p)  =>
+            test.assert_eq(p.0.exponent, 0)
+            test.assert_eq_str(p.1, "min")
+
+    test.case("a prefix on a unit that takes none is refused as a PREFIX, naming both")
+    match unconv.unit_named("mkg")
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(not unfault.is_dimensional(f))
+            test.assert(str.contains(f.message(), "does not take one"))
+            test.assert(str.contains(f.message(), "kg"))
+
+    test.case("and a prefix whose rest is no unit at all is an unknown unit")
+    match unconv.unit_named("mzz")
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert(str.contains(f.message(), "mzz"))
+
+    test.case("a symbol with no prefix, naming no unit either, is the other way in")
+    match unconv.split_prefix("zz")
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert(str.contains(f.message(), "zz"))
+
+@test
+fn test_a_caller_built_unit_is_checked_for_its_scale_and_its_symbol() [io]
+    test.case("a length read in a unit of time is refused, naming both dimensions")
+    match unconv.unit_named("s")
+        Err(_) => test.assert(false)
+        Ok(s)  =>
+            match unconv.length_from(1.5, s)
+                Ok(_)  => test.assert(false)
+                Err(f) =>
+                    test.assert(unfault.is_dimensional(f))
+                    test.assert(str.contains(f.message(), undim.dim_text(undim.time())))
+
+    test.case("an offset belongs to a temperature scale and to no other dimension")
+    let per_second = unconv.custom_unit("degC/s", undim.velocity(), 1.0, 273.15)
+    let offset_faults = unconv.check_unit(per_second)
+    test.assert_eq(list.len(offset_faults), 1)
+    test.assert(str.contains(offset_faults[0].message(), "degC/s"))
+
+    test.case("a factor of zero is not a scale")
+    let nothing = unconv.custom_unit("nothing", undim.length(), 0.0, 0.0)
+    let factor_faults = unconv.check_unit(nothing)
+    test.assert_eq(list.len(factor_faults), 1)
+    test.assert(str.contains(factor_faults[0].message(), "is not a number"))
+
+    test.case("and a symbol that already carries a prefix cannot claim a second")
+    let doubled = UnUnit { symbol: "mPa", dim: undim.pressure(), factor: 1.0,
+                           offset: 0.0, takes_prefix: true }
+    let prefix_faults = unconv.check_unit(doubled)
+    test.assert_eq(list.len(prefix_faults), 1)
+    test.assert(str.contains(prefix_faults[0].message(), "mPa"))
+
+    test.case("a unit that offends in nothing is clean")
+    let barn = unconv.custom_unit("b", undim.area(), 1.0e-28, 0.0)
+    test.assert_eq(list.len(unconv.check_unit(barn)), 0)
+
+@test
+fn test_a_table_with_a_duplicate_symbol_is_reported_once() [io]
+    let m = unconv.unit_named("m")!
+    let s = unconv.unit_named("s")!
+
+    test.case("the symbol appears twice and is reported once")
+    let repeated = unconv.duplicate_symbols([m, s, m, m])
+    test.assert_eq(list.len(repeated), 1)
+    test.assert_eq_str(repeated[0], "m")
+
+    test.case("and a table with no duplicate reports nothing")
+    test.assert_eq(list.len(unconv.duplicate_symbols([m, s])), 0)
+
+@test
+fn test_a_conversion_between_two_dimensions_names_both_units() [io]
+    match unconv.convert(1.0, unconv.unit_named("m")!, unconv.unit_named("s")!)
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(unfault.is_dimensional(f))
+            test.assert(str.contains(f.message(), "m"))
+            test.assert(str.contains(f.message(), "s"))
+
+@test
+fn test_the_unit_grammar_beyond_the_spellings_the_readme_shows() [io]
+    test.case("a multiplication may be written with a middle dot")
+    match untext.parse_unit("N·m")
+        Err(_) => test.assert(false)
+        Ok(u)  => test.assert(undim.dim_eq(u.dim, undim.energy()))
+
+    test.case("or with a star")
+    match untext.parse_unit("N*m")
+        Err(_) => test.assert(false)
+        Ok(u)  => test.assert(undim.dim_eq(u.dim, undim.energy()))
+
+    test.case("an exponent may carry a sign")
+    match untext.parse_unit("m*s^-2")
+        Err(_) => test.assert(false)
+        Ok(u)  => test.assert(undim.dim_eq(u.dim, undim.acceleration()))
+
+    match untext.parse_unit("m*s^+2")
+        Err(_) => test.assert(false)
+        Ok(u)  => test.assert(undim.dim_eq(u.dim, undim.dim(1, 0, 2, 0, 0, 0, 0)))
+
+    test.case("a space after the division sign is read")
+    match untext.parse_unit("m/ s")
+        Err(_) => test.assert(false)
+        Ok(u)  => test.assert(undim.dim_eq(u.dim, undim.velocity()))
+
+    test.case("a factor that is not there is a syntax fault at its offset")
+    match untext.parse_unit("*m")
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert_eq(unfault.offset_of(f), 0)
+
+    match untext.parse_unit("m^")
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert_eq(unfault.offset_of(f), 2)
+
+    match untext.parse_unit("m^2x")
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert_eq(unfault.offset_of(f), 3)
+
+    match untext.parse_unit("   ")
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert_eq(unfault.offset_of(f), 0)
+
+    test.case("and an offset unit in a second factor is refused, not resolved")
+    match untext.parse_unit("m*degC")
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(unfault.is_dimensional(f))
+            test.assert(str.contains(f.message(), "degC"))
+
+@test
+fn test_an_offset_unit_raised_to_a_power_is_refused() [io]
+    match untext.parse_unit("degC^2")
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(unfault.is_dimensional(f))
+            test.assert(str.contains(f.message(), "degC"))
+
+@test
+fn test_a_number_may_be_signed_or_carry_an_exponent() [io]
+    test.case("a negative magnitude round-trips through the machine format")
+    match untext.parse("-2.5 kg")
+        Err(_) => test.assert(false)
+        Ok(q)  =>
+            test.assert(undyn.si_of(q) == 0.0 - 2.5)
+            test.assert_eq_str(untext.format(q, untext.machine_format()), "-2.5 kg")
+
+    test.case("an exponent written with e is the number's, not the unit's")
+    match untext.parse("3.5e-2 m")
+        Err(_) => test.assert(false)
+        Ok(q)  => test.assert_approx(undyn.si_of(q), 0.035, 1.0e-12)
+
+    test.case("and an e that no digit follows is the first letter of a symbol")
+    match untext.parse("3.5eV")
+        Err(_) => test.assert(false)
+        Ok(q)  =>
+            test.assert(undim.dim_eq(undyn.dim_of(q), undim.energy()))
+            test.assert_eq_str(undyn.written_as(q), "eV")
+
+    test.case("while the same e with a digit after it is the number's exponent")
+    match untext.parse("3.5e2 eV")
+        Err(_) => test.assert(false)
+        Ok(q)  => test.assert_approx(undyn.si_of(q), 350.0 * 1.602176634e-19, 1.0e-30)
+
+    test.case("a text with no number at all is a bad number")
+    match untext.parse("km")
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(not unfault.is_dimensional(f))
+            test.assert(str.contains(f.message(), "km"))
+
+    test.case("and so is a point with no digit beside it")
+    match untext.parse(".")
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert(str.contains(f.message(), "is not a number"))
+
+    test.case("the split trims the space after the unit and answers both spans")
+    match untext.split_text("3.5 km ")
+        Err(_) => test.assert(false)
+        Ok(t)  =>
+            test.assert_eq(t.0, 0)
+            test.assert_eq(t.1, 3)
+            test.assert_eq(t.2, 4)
+            test.assert_eq(t.3, 2)
+
+@test
+fn test_a_quantity_with_a_unit_and_one_without_read_the_same() [io]
+    test.case("a unit is required by parse_required and answered by a parse that has one")
+    match untext.parse_required("3.5 m")
+        Ok(q)  => test.assert(undyn.si_of(q) == 3.5)
+        Err(_) => test.assert(false)
+
+    test.case("and refused when there is none")
+    match untext.parse_required("3.5")
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(not unfault.is_dimensional(f))
+            test.assert(str.contains(f.message(), "3.5"))
+
+@test
+fn test_the_offset_applies_to_an_absolute_and_not_to_a_difference() [io]
+    match unconv.unit_named("degC")
+        Err(_) => test.assert(false)
+        Ok(c)  =>
+            test.case("20 °C as a temperature is 293.15 K")
+            test.assert_approx(unconv.to_si_absolute(20.0, c), 293.15, 1.0e-9)
+
+            test.case("and 20 °C as a difference is 20 K — the offset is NOT applied")
+            test.assert_approx(unconv.to_si_delta(20.0, c), 20.0, 1.0e-12)
+
+            test.case("the two answers differ by the offset, so a shared path would show it")
+            test.assert_approx(unconv.to_si_absolute(20.0, c) - unconv.to_si_delta(20.0, c),
+                               273.15, 1.0e-9)
+
+            test.case("and converting back out applies it to the absolute only")
+            test.assert_approx(unconv.from_si_absolute(293.15, c), 20.0, 1.0e-9)
+            test.assert(unconv.from_si_delta(20.0, c) == 20.0)
+
+    match unconv.unit_named("degF")
+        Err(_) => test.assert(false)
+        Ok(f)  =>
+            test.case("9 °F as a temperature is 260.3722… K")
+            test.assert_approx(unconv.to_si_absolute(9.0, f), 260.37222222222223, 1.0e-9)
+
+            test.case("and 9 °F as a difference is 5 K")
+            test.assert_approx(unconv.to_si_delta(9.0, f), 5.0, 1.0e-12)
+
+@test
+fn test_the_written_form_rounds_to_its_digits_and_falls_back_to_the_base_unit() [io]
+    test.case("a large magnitude is rounded with an exact power of ten divided out")
+    match untext.parse("1234.5678 m")
+        Err(_) => test.assert(false)
+        Ok(q)  => test.assert_eq_str(untext.format(q, untext.printed_format(3)), "1230 m")
+
+    test.case("a small magnitude is scaled up instead, so nothing is lost to the floor")
+    match untext.parse("0.0012345 m")
+        Err(_) => test.assert(false)
+        Ok(q)  => test.assert_eq_str(untext.format(q, untext.printed_format(3)), "0.00123 m")
+
+    test.case("zero is already rounded and is answered as it stands")
+    test.assert_eq_str(untext.format(undyn.of_si(0.0, undim.length()), untext.printed_format(3)),
+                       "0 m")
+
+    test.case("a quantity with no spelling writes the base unit of its dimension")
+    test.assert_eq_str(untext.format(undyn.of_si(2.0, undim.length()), untext.machine_format()),
+                       "2 m")
+
+    test.case("and a spelling the parser cannot read falls back to the same base unit")
+    test.assert_eq_str(
+        untext.format(undyn.of_si_written(2.0, undim.length(), "!!"),
+                      untext.machine_format()),
+        "2 m")
+
+    test.case("a dimensionless quantity writes a number with no unit beside it")
+    test.assert_eq_str(untext.format(undyn.of_number(2.0), untext.machine_format()), "2")
+
+    test.case("a quantity whose text does not read back does not round-trip")
+    match untext.parse("3.5 km/h")
+        Err(_) => test.assert(false)
+        Ok(q)  =>
+            test.assert(untext.round_trips(q, untext.machine_format()))
+            test.assert(not untext.round_trips(q, untext.printed_format(3)))
+
+@test
+fn test_a_magnitude_that_does_not_divide_evenly_survives_the_whole_chain() [io]
+    test.case("3.5 km/h converted to m/s is a repeating decimal")
+    let kmh = unconv.unit_named("km/h")!
+    let mps = unconv.unit_named("m/s")!
+    let v = unconv.convert(3.5, kmh, mps)!
+    test.assert_approx(v, 0.9722222222222222, 1.0e-15)
+
+    test.case("the machine format writes it and reads it back to the bit")
+    let written = undyn.of_si_written(v, undim.velocity(), "m/s")
+    test.assert(untext.round_trips(written, untext.machine_format()))
+    let back = undyn.require(
+        untext.parse(untext.format(written, untext.machine_format()))!,
+        undim.velocity())!
+    test.assert_approx(back, v, 1.0e-15)
+
+    test.case("the printed form states its three digits and does not round-trip")
+    // It renders the unit from the dimension (`m·s⁻¹`), and a
+    // superscript form is written and not read, so the digits are what
+    // this path asserts; the machine format above is the one that
+    // agrees to the bit.
+    let printed = untext.format(written, untext.printed_format(3))
+    test.assert(str.contains(printed, "0.972"))
+    test.assert(not untext.round_trips(written, untext.printed_format(3)))
+
+    test.case("a negative magnitude goes through the chain and keeps its sign")
+    let q = untext.parse("-2.5 km/h")!
+    test.assert(untext.round_trips(q, untext.machine_format()))
+    let si = undyn.require(q, undim.velocity())!
+    test.assert_approx(si, 0.0 - 0.6944444444444444, 1.0e-15)
+    let out = undyn.require(
+        untext.parse(untext.format(q, untext.machine_format()))!,
+        undim.velocity())!
+    test.assert(out < 0.0)
+    test.assert_approx(out, si, 1.0e-15)
+
+@test
+fn test_a_format_may_ask_for_superscripts_without_the_middle_dot() [io]
+    // The two constructors combine both flags or neither, and the source
+    // says the flags are independent; a caller builds the other two.
+    let spaced = UnFormat { significant_digits: 0, keep_written_unit: true, middle_dot: false,
+                            superscripts: true, space_before_unit: true }
+    let dotted = UnFormat { significant_digits: 0, keep_written_unit: true, middle_dot: true,
+                            superscripts: false, space_before_unit: false }
+
+    match untext.parse_unit("m/s^2")
+        Err(_) => test.assert(false)
+        Ok(u)  =>
+            test.case("superscripts multiply with a space when there is no middle dot")
+            test.assert_eq_str(untext.format_unit(u, spaced), "m s⁻²")
+
+            test.case("and the middle dot multiplies with a caret exponent")
+            test.assert_eq_str(untext.format_unit(u, dotted), "m·s^-2")
+
+    test.case("a format with no space before the unit runs the number into it")
+    match untext.parse("3.5 km/h")
+        Err(_) => test.assert(false)
+        Ok(q)  => test.assert_eq_str(untext.format(q, dotted), "3.5km/h")
+
+@test
+fn test_every_refusal_renders_a_message_and_sorts_into_a_kind() [io]
+    test.case("a dimension mismatch carries both dimensions")
+    let mismatch = unfault.wrong_dimension(undim.velocity(), undim.acceleration())
+    test.assert(unfault.is_dimensional(mismatch))
+    test.assert(str.contains(mismatch.message(), undim.dim_text(undim.velocity())))
+    test.assert(str.contains(mismatch.message(), undim.dim_text(undim.acceleration())))
+
+    test.case("a root that does not divide every exponent")
+    match undim.dim_root(undim.velocity(), 2)
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(unfault.is_dimensional(f))
+            test.assert(str.contains(f.message(), "root"))
+
+    test.case("an exponent past the seven a dimension holds")
+    match undim.exponent_at(undim.length(), 9)
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(unfault.is_dimensional(f))
+            test.assert(str.contains(f.message(), "9"))
+
+    test.case("a unit symbol this package does not know")
+    match unconv.unit_named("furlong")
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(not unfault.is_dimensional(f))
+            test.assert(str.contains(f.message(), "furlong"))
+
+    test.case("a unit expression that does not parse carries its offset")
+    match untext.parse_unit("m^2x")
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(not unfault.is_dimensional(f))
+            test.assert_eq(unfault.offset_of(f), 3)
+            test.assert(str.contains(f.message(), "syntax"))
+            test.assert(str.contains(f.message(), "m^2x"))
+
+    test.case("a number that does not parse carries no offset and no dimension")
+    match untext.parse(".")
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(not unfault.is_dimensional(f))
+            test.assert_eq(unfault.offset_of(f), 0 - 1)
+
+    test.case("a quantity with no unit where one was required")
+    match untext.parse_required("3.5")
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(not unfault.is_dimensional(f))
+            test.assert_eq(unfault.offset_of(f), 0 - 1)
+
+    test.case("an offset unit inside a compound expression is about the dimensions")
+    match untext.parse_unit("m*degC")
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert(unfault.is_dimensional(f))
+
+    test.case("an offset unit raised to a power, likewise")
+    match untext.parse_unit("degC^2")
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert(unfault.is_dimensional(f))
+
+    test.case("a dimension the static set has no type for, built by a caller")
+    let unsupported_dim = undim.dim(0, 0, 0, 1, 0, 0, 1)
+    let unsupported = UnNoStaticType(unsupported_dim)
+    test.assert(unfault.is_dimensional(unsupported))
+    test.assert(str.contains(unsupported.message(), undim.dim_text(unsupported_dim)))
+
+    test.case("and a cursor with less room than the text needs")
+    let q = untext.parse("3.5 km/h")!
+    var tight = bytes.cursor_be(bytes.zeros(2))
+    match untext.format_into(q, untext.machine_format(), tight)
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert(not unfault.is_dimensional(f))
+            test.assert(str.contains(f.message(), "bytes"))
+
+// ── The lines the mutation battery found free ───────────────────────
+
+@test
+fn test_no_two_of_the_seven_bases_are_the_same_dimension() [io]
+    test.case("an exponent of one is required: a power is no base")
+    test.assert(not undim.is_base(undim.area()))
+    test.assert(not undim.is_base(undim.volume()))
+
+    test.case("nor is a negative exponent, which is a factor and not an exponent of one")
+    test.assert(not undim.is_base(undim.frequency()))
+
+    test.case("each of the seven is a base and differs from the plain number")
+    let bases = [undim.length(), undim.mass(), undim.time(), undim.current(),
+                 undim.temperature(), undim.amount(), undim.luminous()]
+    for i in 0..7
+        test.assert(undim.is_base(bases[i]))
+        test.assert(not undim.dim_eq(bases[i], undim.scalar()))
+        test.assert(not undim.is_dimensionless(bases[i]))
+
+    test.case("and no two of the seven are equal, field by field")
+    for a in 0..7
+        for b in a + 1..7
+            test.assert(not undim.dim_eq(bases[a], bases[b]))
+
+@test
+fn test_a_spelling_that_disagrees_with_the_dimension_is_not_used() [io]
+    let f = untext.machine_format()
+
+    test.case("a spelling whose dimension is the quantity's is kept")
+    let agreed = undyn.of_si_written(2.0, undim.velocity(), "km/h")
+    test.assert(str.contains(untext.format(agreed, f), "km/h"))
+
+    test.case("and one whose dimension is not is dropped for the base unit")
+    let behind_a_wrong_spelling = undyn.of_si_written(2.0, undim.length(), "km/h")
+    test.assert_eq_str(untext.format(behind_a_wrong_spelling, f), "2 m")
+
+@test
+fn test_the_bound_publishes_the_number_slot_the_source_documents() [io]
+    let f = untext.machine_format()
+    let widest = undyn.of_number(1.7976931348623157e308)
+    let text = untext.format(widest, f)
+
+    test.case("the widest float the package writes fits the twenty-six bytes it documents")
+    test.assert(str.len(text) <= 26)
+
+    test.case("and so the bound covers that slot over the text itself")
+    test.assert(untext.format_bound(widest, f) >= 26)
+
+@test
+fn test_near_includes_the_tolerance_it_was_given() [io]
+    test.case("a gap of exactly the tolerance is within it")
+    test.assert(unqty.length_near(unqty.length_m(1.0), unqty.length_m(2.0),
+                                  unqty.length_m(1.0)))
+
+    test.case("and a gap past it is not")
+    test.assert(not unqty.length_near(unqty.length_m(1.0), unqty.length_m(2.0001),
+                                      unqty.length_m(1.0)))
+
+@test
+fn test_the_dimensionless_dimension_has_a_static_type() [io]
+    test.case("the plain number counts, because UnAngle is the type it maps to")
+    test.assert(undim.has_static_type(undim.scalar()))
+    test.assert(undyn.has_static_type(undyn.of_number(1.0)))
+
+    test.case("and a named dimension counts the other way")
+    test.assert(undim.has_static_type(undim.velocity()))
+
+@test
+fn test_a_dynamic_temperature_reads_back_in_the_unit_it_was_built_from() [io]
+    let c = unconv.unit_named("degC")!
+    let q = unconv.dyn_of(20.0, c)
+
+    test.case("twenty degrees Celsius built from the unit reads back as twenty")
+    let back = unconv.dyn_in(q, c)!
+    test.assert_approx(back, 20.0, 1.0e-9)
+
+    test.case("and the magnitude it carries is the absolute, 293.15 K")
+    test.assert_approx(undyn.si_of(q), 293.15, 1.0e-9)
+
+@test
+fn test_a_mismatch_says_which_dimension_was_wanted_and_which_arrived() [io]
+    let want = undim.dim_text(undim.velocity())
+    let got = undim.dim_text(undim.acceleration())
+
+    test.case("the wanted dimension comes first and the received one second")
+    test.assert_eq_str(
+        unfault.wrong_dimension(undim.velocity(), undim.acceleration()).message(),
+        "${want} wanted, ${got} got")
+
+    test.case("and a refused conversion names what the caller asked for")
+    let s = unconv.unit_named("s")!
+    let asked = undim.dim_text(undim.length())
+    let arrived = undim.dim_text(undim.time())
+    match unconv.length_from(1.5, s)
+        Ok(_)  => test.assert(false)
+        Err(f) => test.assert_eq_str(f.message(), "${asked} wanted, ${arrived} got")
+
+    test.case("and so does a typed conversion, which goes through the shared path")
+    let metre = unconv.unit_named("m")!
+    let time_wanted = undim.dim_text(undim.time())
+    let metre_arrived = undim.dim_text(undim.length())
+    match unconv.time_in(unqty.time_s(1.0), metre)
+        Ok(_)  => test.assert(false)
+        Err(f) =>
+            test.assert_eq_str(f.message(), "${time_wanted} wanted, ${metre_arrived} got")

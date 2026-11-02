@@ -10,12 +10,6 @@ Its references for the interface are the Python library
 [pint](https://pint.readthedocs.io/) and the Rust crate
 [uom](https://docs.rs/uom).
 
-**Status: NOT IMPLEMENTED — interface only.** Every function is declared
-with its full signature, but every body is a `todo()` that panics when
-called. The package is published so its design can be reviewed and
-depended on before it is implemented. Version 0.1.0 will be the first
-working release.
-
 ## What a dimension and a quantity are
 
 The SI has seven **base dimensions**: length, mass, time, electric
@@ -85,10 +79,13 @@ fn main() [io]
                 Ok(mps) => println("${mps} metres per second")
 ```
 
-Build and test with `novo pkg build` and `novo test`. Today `novo test`
-fails on purpose: every test reaches a
-`not implemented: units-nv.<module>.<fn>` panic. The tests are the
-specification the implementation will have to satisfy.
+Build and test with `novo pkg build` and `novo test`. The seven test
+files under `tests/` are the specification: the six oracle suites were
+written with the interface, and the seventh, `units_edge_tests.nv`, was
+added with the bodies to reach the paths they do not. Seven of that
+suite's cases pin a line the mutation battery found free — an assertion
+that survives its own mutation is decoration — and each is commented
+with the line it pins.
 
 ## What the package contains
 
@@ -262,7 +259,8 @@ text.**
 ## Tests
 
 ```bash
-novo test tests/unqty_tests.nv       # 11 tests: the arithmetic, the offset, the tables
+novo test tests/unqty_tests.nv       # 17 tests: the arithmetic, the offset, the tables
+novo test tests/units_edge_tests.nv  # 27 tests: the paths the oracle suites do not reach
 ```
 
 The constants are the SI Brochure's, including the defining constants of
@@ -278,34 +276,6 @@ carry, that the offset applies to an absolute temperature and not to a
 difference, that parse followed by format is the identity, and that
 every published unit table is internally consistent and free of
 duplicate symbols.
-
-The tests compile today and fail at run, each on the
-`not implemented: units-nv.<module>.<fn>` panic that is its body. That
-is the expected state of an interface release. They turn green one at a
-time as bodies land.
-
-## Implementation status
-
-| Item | Implemented |
-| --- | --- |
-| `undim.UnDim`, `unconv.UnUnit`, `.UnPrefix`, `undyn.UnDyn`, `untext.UnFormat`, `unfault.UnFault` | declared |
-| The twenty-three quantity types in `unqty` | declared |
-| `undim.scalar`, `.dim`, the seven base dimensions and the fourteen derived ones | no |
-| `undim.dim_multiply`, `.dim_divide`, `.dim_power`, `.dim_root`, `.dim_eq`, the four predicates, the three renderings, `.exponent_at` and `.base_symbols` | no |
-| `unqty`'s twenty-three constructors and sixteen accessors | no |
-| `unqty`'s eighteen physical relations, from `velocity_of` to `angle_of` | no |
-| `unqty`'s per-type arithmetic, comparisons and the four temperature operations | no |
-| `unqty`'s seven dimension accessors and `static_type_count` | no |
-| `undyn`'s construction, inspection, arithmetic, comparison and `require` | no |
-| `undyn`'s ten conversions from a typed quantity, and the two static-type queries | no |
-| `unconv.unit_named`, `.custom_unit`, `.base_unit`, `.has_offset`, `.split_prefix`, `.si_prefixes`, `.no_prefix` | no |
-| `unconv.to_si_absolute`, `.to_si_delta`, `.from_si_absolute`, `.from_si_delta`, `.convert`, `.dyn_in`, `.dyn_of` | no |
-| `unconv`'s thirteen unit tables, `.units_of`, `.check_unit`, `.duplicate_symbols` | no |
-| `unconv`'s nine per-type conversions | no |
-| `untext.parse`, `.parse_required`, `.parse_as`, `.parse_unit`, `.parse_dim`, `.split_text` | no |
-| `untext.format`, `.format_in`, `.format_into`, `.format_bound`, `.format_unit`, and the five per-type formats | no |
-| `untext.machine_format`, `.printed_format`, `.round_trips`, `.is_quantity` | no |
-| `unfault.wrong_dimension`, `.is_dimensional`, `.offset_of`, and the `Error` implementation | no |
 
 ## Licence
 

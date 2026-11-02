@@ -1,9 +1,6 @@
 // unconv_tests.nv — the unit tables, the conversions in and out of SI,
 // and the typed conversions for the static half.
 //
-// RED ON PURPOSE: every body under `src/` is a `todo()`, so every
-// assertion here reaches `not implemented: units-nv.<module>.<fn>`.
-//
 // The factors asserted below are the exact definitions: a foot is
 // 0.3048 m, a pound 0.45359237 kg, a calorie 4.184 J, an atmosphere
 // 101325 Pa.  A table that rounds one of them goes red here.
@@ -25,7 +22,7 @@ fn has_symbol(units: [UnUnit], sym: Str) -> Bool
 // Whether every unit in a table has the dimension `d`.
 fn all_of_dim(units: [UnUnit], d: UnDim) -> Bool
     for u in units
-        if undim.dim_eq(u.dim, d) == false
+        if not undim.dim_eq(u.dim, d)
             return false
     true
 
@@ -35,7 +32,7 @@ fn test_a_caller_builds_its_own_unit_without_touching_the_table() [io]
     let barn = unconv.custom_unit("b", undim.area(), 1.0e-28, 0.0)
     test.assert_eq_str(barn.symbol, "b")
     test.assert(barn.factor == 1.0e-28)
-    test.assert(unconv.has_offset(barn) == false)
+    test.assert(not unconv.has_offset(barn))
     test.assert(list.len(unconv.check_unit(barn)) == 0)
 
     test.case("and the package's own table still does not know it")
@@ -148,8 +145,8 @@ fn test_each_table_holds_the_units_its_doc_names_and_only_its_dimension() [io]
     test.assert(all_of_dim(times, undim.time()))
     test.assert(has_symbol(times, "s"))
     test.assert(has_symbol(times, "h"))
-    test.assert(has_symbol(times, "month") == false)
-    test.assert(has_symbol(times, "yr") == false)
+    test.assert(not has_symbol(times, "month"))
+    test.assert(not has_symbol(times, "yr"))
 
     test.case("temperatures: four scales, two of them with an offset")
     let temps = unconv.temperature_units()
@@ -172,7 +169,7 @@ fn test_each_table_holds_the_units_its_doc_names_and_only_its_dimension() [io]
     test.assert(has_symbol(volumes, "L"))
     test.assert(has_symbol(volumes, "gal_us"))
     test.assert(has_symbol(volumes, "gal_imp"))
-    test.assert(has_symbol(volumes, "gal") == false)
+    test.assert(not has_symbol(volumes, "gal"))
 
     test.case("speeds: metres per second, kilometres per hour, the knot")
     let speeds = unconv.velocity_units()
@@ -199,7 +196,7 @@ fn test_each_table_holds_the_units_its_doc_names_and_only_its_dimension() [io]
     let powers = unconv.power_units()
     test.assert(all_of_dim(powers, undim.power()))
     test.assert(has_symbol(powers, "W"))
-    test.assert(has_symbol(powers, "hp") == false)
+    test.assert(not has_symbol(powers, "hp"))
 
     test.case("pressures: the standard atmosphere is 101325 Pa")
     let pressures = unconv.pressure_units()

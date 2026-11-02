@@ -1,8 +1,6 @@
 // unconv.nv — units: what a magnitude is written in, and the tables
 // that turn it into SI and back.
 //
-// Every body here is a `todo()`; the signatures are the design.
-//
 // A UNIT IS A SCALE, AN OFFSET AND A DIMENSION.  Almost every unit is
 // just a scale — a mile is 1609.344 metres, a horsepower is 745.7 watts
 // — and the handful that are not are the reason this module is larger
@@ -42,6 +40,11 @@
 // not know about it, which is a bug that only shows up in the second
 // program to use both.
 
+use undim
+use undyn
+use unqty
+use unfault
+
 // A unit: a symbol, a dimension, a scale and an offset.
 pub struct UnUnit
     // The symbol as it is written — `km`, `°C`, `lbf`.
@@ -64,6 +67,135 @@ pub struct UnPrefix
     // The power of ten — 3 for `k`, -6 for `µ`.
     exponent: Int
 
+// ── Private helpers ─────────────────────────────────────────────────
+
+// A unit built from its five parts, in the order the struct declares
+// them.
+//
+// The one place a `UnUnit` literal is written, so the field order is
+// stated once — `custom_unit` and every table entry go through here or
+// through one of the two shorthands below.
+fn unit(symbol: Str, d: UnDim, factor: Float, offset: Float, takes_prefix: Bool) -> UnUnit
+    UnUnit { symbol: symbol, dim: d, factor: factor, offset: offset,
+             takes_prefix: takes_prefix }
+
+// A scale with no offset that takes no prefix — every imperial,
+// customary and historical unit in the tables.
+fn plain(symbol: Str, d: UnDim, factor: Float) -> UnUnit
+    unit(symbol, d, factor, 0.0, false)
+
+// A coherent SI unit: a factor of one, no offset, and a prefix may be
+// written on it, so `kN` and `mL` resolve without a table entry.
+fn coherent(symbol: Str, d: UnDim) -> UnUnit
+    unit(symbol, d, 1.0, 0.0, true)
+
+// The unit a symbol names with no prefix applied — a table entry or one
+// of the coherent units, and nothing else.
+fn bare_unit(symbol: Str) -> Result<UnUnit, UnFault>
+    for u in all_units()
+        if u.symbol == symbol
+            return Ok(u)
+    for u in coherent_units()
+        if u.symbol == symbol
+            return Ok(u)
+    Err(UnUnknownUnit(symbol))
+
+// Whether a symbol names a bare unit — a table entry or one of the
+// coherent units, with no prefix applied.
+//
+// The question `split_prefix` asks twice, and NOT the same question
+// `takes_a_prefix` asks: every symbol here names a unit, and only some
+// of them take a further prefix.  `kg`, `min` and the imperial units
+// name units and take none.
+fn is_unit_symbol(symbol: Str) -> Bool
+    match bare_unit(symbol)
+        Ok(_)  => true
+        Err(_) => false
+
+// Whether a prefix may be written on this symbol.
+fn takes_a_prefix(symbol: Str) -> Bool
+    match bare_unit(symbol)
+        Ok(u)  => u.takes_prefix
+        Err(_) => false
+
+// The longest SI prefix a symbol starts with, or the empty prefix.
+//
+// LONGEST FIRST, which is the whole reason this is a function: `daL` is
+// a decalitre and `dam` a decametre, and a scan that stopped at `d`
+// would answer a deci-ampere-litre and a deci-ångström.
+fn longest_prefix(symbol: Str) -> UnPrefix
+    var best = no_prefix()
+    var best_len = 0
+    for p in si_prefixes()
+        if str.len(p.symbol) > best_len and str.len(symbol) > str.len(p.symbol)
+            if str.starts_with(symbol, p.symbol)
+                best = p
+                best_len = str.len(p.symbol)
+    best
+
+// The unit a prefixed symbol names, when no table entry carries it.
+fn prefixed_unit(symbol: Str) -> Result<UnUnit, UnFault>
+    let parts = split_prefix(symbol)!
+    scaled(symbol, parts.0, parts.1)
+
+// The unit a prefix and the rest of a symbol name.
+fn scaled(symbol: Str, p: UnPrefix, rest: Str) -> Result<UnUnit, UnFault>
+    match bare_unit(rest)
+        // cov: skip — `split_prefix` answers a rest only after `bare_unit` resolved it, so this refusal cannot fire
+        Err(_) => Err(UnUnknownUnit(symbol))
+        Ok(u)  => Ok(unit(symbol, u.dim, math.pow(10.0, p.exponent as Float) * u.factor,
+                         u.offset, false))
+
+// The prefix a symbol ALREADY carries, or the empty string.
+//
+// A symbol carries a prefix here only when the rest of it names a unit
+// that itself takes one, which is the KILOGRAM's case exactly — the one
+// SI symbol written with a prefix already on it, and the reason its
+// table entry sets `takes_prefix` false: a further prefix on it would
+// be a second prefix on one scale.  `Pa` and `cd` merely begin with the
+// letters of one (`peta` + `a`, `centi` + `d`) and carry none.
+fn carried_prefix(symbol: Str) -> Str
+    var best = ""
+    var best_len = 0
+    for p in si_prefixes()
+        if str.len(p.symbol) > best_len and str.len(symbol) > str.len(p.symbol)
+            if str.starts_with(symbol, p.symbol)
+                let rest = str.slice(symbol, str.len(p.symbol), str.len(symbol))
+                if takes_a_prefix(rest)
+                    best = p.symbol
+                    best_len = str.len(p.symbol)
+    best
+
+// The coherent SI unit of every dimension this package can name.
+//
+// The fallback `unit_named` and `base_unit` reach for when a symbol has
+// no table entry of its own: `Hz`, `V` and `kg/m^3` are what SI writes
+// and none of them is a table entry, because a caller converting
+// between named units never needs them by name.
+fn coherent_units() -> [UnUnit]
+    [coherent("A", undim.current()),
+     coherent("mol", undim.amount()),
+     coherent("cd", undim.luminous()),
+     coherent("Hz", undim.frequency()),
+     coherent("C", undim.charge()),
+     coherent("V", undim.voltage()),
+     coherent("ohm", undim.resistance()),
+     plain("m^3", undim.volume(), 1.0),
+     plain("m/s^2", undim.acceleration(), 1.0),
+     plain("kg/m^3", undim.density(), 1.0),
+     plain("kg*m/s", undim.momentum(), 1.0)]
+
+// A magnitude read in a unit, for the typed half.
+//
+// One place for the nine typed conversions, so the dimension check and
+// the choice between the absolute and the delta form are stated once.
+fn typed_in(si: Float, want: UnDim, u: UnUnit, absolute: Bool) -> Result<Float, UnFault>
+    if not undim.dim_eq(u.dim, want)
+        return Err(UnWrongDimension(want, u.dim))
+    if absolute
+        return Ok(from_si_absolute(si, u))
+    Ok(from_si_delta(si, u))
+
 // The unit a symbol names, prefix included.
 //
 // ```novo
@@ -75,7 +207,9 @@ pub struct UnPrefix
 //         Err(_) => println("no such unit")
 // ```
 pub fn unit_named(symbol: Str) -> Result<UnUnit, UnFault>
-    todo("units-nv.unconv.unit_named")
+    match bare_unit(symbol)
+        Ok(u)  => Ok(u)
+        Err(_) => prefixed_unit(symbol)
 
 // A unit a caller defines.
 //
@@ -84,21 +218,29 @@ pub fn unit_named(symbol: Str) -> Result<UnUnit, UnFault>
 // passes it to the conversion functions, and nothing about this
 // package's own table changes.
 pub fn custom_unit(symbol: Str, d: UnDim, factor: Float, offset: Float) -> UnUnit
-    todo("units-nv.unconv.custom_unit")
+    unit(symbol, d, factor, offset, false)
 
 // The SI base unit of a dimension, as a unit.
 //
 // What `format` writes when a quantity has no named unit, and what a
 // conversion falls back to.
 pub fn base_unit(d: UnDim) -> UnUnit
-    todo("units-nv.unconv.base_unit")
+    if undim.is_dimensionless(d)
+        return unit("", d, 1.0, 0.0, false)
+    for u in all_units()
+        if undim.dim_eq(u.dim, d) and u.factor == 1.0 and u.offset == 0.0
+            return u
+    for u in coherent_units()
+        if undim.dim_eq(u.dim, d)
+            return u
+    unit(undim.dim_ascii(d), d, 1.0, 0.0, false)
 
 // Whether a unit has an offset.
 //
 // The question every compound-expression check asks, and the one that
 // separates °C from every other unit in the table.
 pub fn has_offset(u: UnUnit) -> Bool
-    todo("units-nv.unconv.has_offset")
+    u.offset != 0.0
 
 // The prefix a symbol starts with, and the rest of the symbol.
 //
@@ -106,16 +248,57 @@ pub fn has_offset(u: UnUnit) -> Bool
 // both the metre and the milli prefix, `daL` is a decalitre and not a
 // deci-ampere-litre, and a caller splitting a symbol by hand gets one
 // of those wrong.
+//
+// A BARE UNIT NAMES ITSELF BEFORE ANY PREFIX IS TRIED: `min` is the
+// minute and not a milli-inch, and `cd` the candela and not a
+// centi-day.  That is the order `unit_named` resolves in, so a caller
+// that splits a symbol by hand gets the same answer the table does.
+// What is left is a prefix and a rest, and the rest has to name a unit
+// that takes one — `mkg` names no prefix rule at all, because `kg`
+// already carries the SI's one built-in prefix.
 pub fn split_prefix(symbol: Str) -> Result<(UnPrefix, Str), UnFault>
-    todo("units-nv.unconv.split_prefix")
+    if is_unit_symbol(symbol)
+        return Ok((no_prefix(), symbol))
+    let p = longest_prefix(symbol)
+    if str.len(p.symbol) == 0
+        return Err(UnUnknownUnit(symbol))
+    let rest = str.slice(symbol, str.len(p.symbol), str.len(symbol))
+    if not is_unit_symbol(rest)
+        return Err(UnUnknownUnit(symbol))
+    if not takes_a_prefix(rest)
+        return Err(UnUnknownPrefix(p.symbol, rest))
+    Ok((p, rest))
 
 // The twenty-four SI prefixes, from quecto to quetta.
 pub fn si_prefixes() -> [UnPrefix]
-    todo("units-nv.unconv.si_prefixes")
+    [UnPrefix { symbol: "q", exponent: 0 - 30 },
+     UnPrefix { symbol: "r", exponent: 0 - 27 },
+     UnPrefix { symbol: "y", exponent: 0 - 24 },
+     UnPrefix { symbol: "z", exponent: 0 - 21 },
+     UnPrefix { symbol: "a", exponent: 0 - 18 },
+     UnPrefix { symbol: "f", exponent: 0 - 15 },
+     UnPrefix { symbol: "p", exponent: 0 - 12 },
+     UnPrefix { symbol: "n", exponent: 0 - 9 },
+     UnPrefix { symbol: "µ", exponent: 0 - 6 },
+     UnPrefix { symbol: "m", exponent: 0 - 3 },
+     UnPrefix { symbol: "c", exponent: 0 - 2 },
+     UnPrefix { symbol: "d", exponent: 0 - 1 },
+     UnPrefix { symbol: "da", exponent: 1 },
+     UnPrefix { symbol: "h", exponent: 2 },
+     UnPrefix { symbol: "k", exponent: 3 },
+     UnPrefix { symbol: "M", exponent: 6 },
+     UnPrefix { symbol: "G", exponent: 9 },
+     UnPrefix { symbol: "T", exponent: 12 },
+     UnPrefix { symbol: "P", exponent: 15 },
+     UnPrefix { symbol: "E", exponent: 18 },
+     UnPrefix { symbol: "Z", exponent: 21 },
+     UnPrefix { symbol: "Y", exponent: 24 },
+     UnPrefix { symbol: "R", exponent: 27 },
+     UnPrefix { symbol: "Q", exponent: 30 }]
 
 // The prefix with no scaling.
 pub fn no_prefix() -> UnPrefix
-    todo("units-nv.unconv.no_prefix")
+    UnPrefix { symbol: "", exponent: 0 }
 
 // ── Converting ──────────────────────────────────────────────────────
 
@@ -123,7 +306,7 @@ pub fn no_prefix() -> UnPrefix
 //
 // The offset applies: `20` in `°C` is `293.15`.
 pub fn to_si_absolute(value: Float, u: UnUnit) -> Float
-    todo("units-nv.unconv.to_si_absolute")
+    value * u.factor + u.offset
 
 // A magnitude in a unit, as an SI magnitude, treated as a DIFFERENCE.
 //
@@ -131,30 +314,35 @@ pub fn to_si_absolute(value: Float, u: UnUnit) -> Float
 // rather than a flag, because the choice is the caller's and a flag is
 // a thing a caller passes wrongly once and never notices.
 pub fn to_si_delta(value: Float, u: UnUnit) -> Float
-    todo("units-nv.unconv.to_si_delta")
+    value * u.factor
 
 // An SI magnitude in a unit, as an absolute.
 pub fn from_si_absolute(si: Float, u: UnUnit) -> Float
-    todo("units-nv.unconv.from_si_absolute")
+    (si - u.offset) / u.factor
 
 // An SI magnitude in a unit, as a difference.
 pub fn from_si_delta(si: Float, u: UnUnit) -> Float
-    todo("units-nv.unconv.from_si_delta")
+    si / u.factor
 
 // A magnitude converted between two units of the same dimension.
 //
 // Refuses units of different dimensions, naming both symbols — the one
 // conversion fault a caller can fix by reading the message.
 pub fn convert(value: Float, from: UnUnit, to: UnUnit) -> Result<Float, UnFault>
-    todo("units-nv.unconv.convert")
+    if not undim.dim_eq(from.dim, to.dim)
+        return Err(UnIncompatibleUnits(from.symbol, to.symbol))
+    Ok(from_si_absolute(to_si_absolute(value, from), to))
 
 // A dynamic quantity read in a unit.
 pub fn dyn_in(q: UnDyn, u: UnUnit) -> Result<Float, UnFault>
-    todo("units-nv.unconv.dyn_in")
+    let here = undyn.dim_of(q)
+    if not undim.dim_eq(here, u.dim)
+        return Err(UnWrongDimension(u.dim, here))
+    Ok(from_si_absolute(undyn.si_of(q), u))
 
 // A dynamic quantity from a magnitude and a unit, as an absolute.
 pub fn dyn_of(value: Float, u: UnUnit) -> UnDyn
-    todo("units-nv.unconv.dyn_of")
+    undyn.of_si_written(to_si_absolute(value, u), u.dim, u.symbol)
 
 // ── The named tables, per dimension ─────────────────────────────────
 
@@ -166,12 +354,28 @@ pub fn dyn_of(value: Float, u: UnUnit) -> UnDyn
 // wants to enumerate them, and because a list makes the table
 // reviewable against a reference.
 pub fn length_units() -> [UnUnit]
-    todo("units-nv.unconv.length_units")
+    [coherent("m", undim.length()),
+     plain("ft", undim.length(), 0.3048),
+     plain("in", undim.length(), 0.0254),
+     plain("yd", undim.length(), 0.9144),
+     plain("mi", undim.length(), 1609.344),
+     plain("nmi", undim.length(), 1852.0),
+     plain("Å", undim.length(), 1.0e-10),
+     plain("au", undim.length(), 149597870700.0),
+     plain("ly", undim.length(), 9460730472580800.0),
+     plain("pc", undim.length(), 3.0856775814913673e16)]
 
 // The mass units — kilogram, gram, tonne, pound, ounce, stone, grain,
 // troy ounce.
 pub fn mass_units() -> [UnUnit]
-    todo("units-nv.unconv.mass_units")
+    [unit("kg", undim.mass(), 1.0, 0.0, false),
+     unit("g", undim.mass(), 0.001, 0.0, true),
+     plain("t", undim.mass(), 1000.0),
+     plain("lb", undim.mass(), 0.45359237),
+     plain("oz", undim.mass(), 0.028349523125),
+     plain("st", undim.mass(), 6.35029318),
+     plain("gr", undim.mass(), 0.00006479891),
+     plain("oz_tr", undim.mass(), 0.0311034768)]
 
 // The time units — second, minute, hour, day, week.
 //
@@ -181,7 +385,11 @@ pub fn mass_units() -> [UnUnit]
 // asked.  That arithmetic is calendar-nv's, over dates, and the
 // README names the boundary.
 pub fn time_units() -> [UnUnit]
-    todo("units-nv.unconv.time_units")
+    [coherent("s", undim.time()),
+     unit("min", undim.time(), 60.0, 0.0, false),
+     unit("h", undim.time(), 3600.0, 0.0, false),
+     unit("d", undim.time(), 86400.0, 0.0, false),
+     unit("wk", undim.time(), 604800.0, 0.0, false)]
 
 // The temperature scales — kelvin, degree Celsius, degree Fahrenheit,
 // degree Rankine.
@@ -189,12 +397,19 @@ pub fn time_units() -> [UnUnit]
 // Two of the four have an offset, which is why they are their own list
 // and why `to_si_absolute` and `to_si_delta` exist.
 pub fn temperature_units() -> [UnUnit]
-    todo("units-nv.unconv.temperature_units")
+    [coherent("K", undim.temperature()),
+     unit("degC", undim.temperature(), 1.0, 273.15, false),
+     unit("degF", undim.temperature(), 5.0 / 9.0, 273.15 - 32.0 * (5.0 / 9.0), false),
+     unit("degR", undim.temperature(), 5.0 / 9.0, 0.0, false)]
 
 // The area units — square metre, hectare, acre, square foot, square
 // mile.
 pub fn area_units() -> [UnUnit]
-    todo("units-nv.unconv.area_units")
+    [plain("m^2", undim.area(), 1.0),
+     plain("ha", undim.area(), 10000.0),
+     plain("acre", undim.area(), 4046.8564224),
+     plain("ft^2", undim.area(), 0.09290304),
+     plain("mi^2", undim.area(), 2589988.110336)]
 
 // The volume units — cubic metre, litre, US gallon, imperial gallon,
 // US fluid ounce, imperial fluid ounce, pint.
@@ -205,16 +420,29 @@ pub fn area_units() -> [UnUnit]
 // unambiguous, and refusing the bare ones is deliberate: guessing which
 // gallon somebody meant is how a recipe scales wrongly.
 pub fn volume_units() -> [UnUnit]
-    todo("units-nv.unconv.volume_units")
+    [plain("m^3", undim.volume(), 1.0),
+     unit("L", undim.volume(), 0.001, 0.0, true),
+     plain("gal_us", undim.volume(), 0.003785411784),
+     plain("gal_imp", undim.volume(), 0.00454609),
+     plain("floz_us", undim.volume(), 2.95735295625e-05),
+     plain("floz_imp", undim.volume(), 2.84130625e-05),
+     plain("pt_us", undim.volume(), 0.000473176473),
+     plain("pt_imp", undim.volume(), 0.00056826125)]
 
 // The speed units — metre per second, kilometre per hour, mile per
 // hour, knot.
 pub fn velocity_units() -> [UnUnit]
-    todo("units-nv.unconv.velocity_units")
+    [plain("m/s", undim.velocity(), 1.0),
+     plain("km/h", undim.velocity(), 1000.0 / 3600.0),
+     plain("mph", undim.velocity(), 0.44704),
+     plain("kn", undim.velocity(), 1852.0 / 3600.0)]
 
 // The force units — newton, pound-force, kilogram-force, dyne.
 pub fn force_units() -> [UnUnit]
-    todo("units-nv.unconv.force_units")
+    [coherent("N", undim.force()),
+     plain("lbf", undim.force(), 4.4482216152605),
+     plain("kgf", undim.force(), 9.80665),
+     plain("dyn", undim.force(), 1.0e-05)]
 
 // The energy units — joule, calorie, kilocalorie, watt-hour,
 // electronvolt, BTU.
@@ -223,7 +451,12 @@ pub fn force_units() -> [UnUnit]
 // the dietary Calorie is `kcal` — which is a factor of a thousand and
 // is the single most common unit confusion in a consumer application.
 pub fn energy_units() -> [UnUnit]
-    todo("units-nv.unconv.energy_units")
+    [coherent("J", undim.energy()),
+     plain("cal", undim.energy(), 4.184),
+     plain("kcal", undim.energy(), 4184.0),
+     plain("Wh", undim.energy(), 3600.0),
+     plain("eV", undim.energy(), 1.602176634e-19),
+     plain("BTU", undim.energy(), 1055.05585262)]
 
 // The power units — watt, horsepower (metric), horsepower
 // (mechanical).
@@ -231,25 +464,48 @@ pub fn energy_units() -> [UnUnit]
 // Two horsepowers, differing by 1.4%, and both written `hp`.  Same
 // treatment as the gallon.
 pub fn power_units() -> [UnUnit]
-    todo("units-nv.unconv.power_units")
+    [coherent("W", undim.power()),
+     plain("hp_m", undim.power(), 735.49875),
+     plain("hp_mech", undim.power(), 745.6998715822702)]
 
 // The pressure units — pascal, bar, atmosphere, torr, psi, millimetre
 // of mercury, inch of mercury.
 pub fn pressure_units() -> [UnUnit]
-    todo("units-nv.unconv.pressure_units")
+    [coherent("Pa", undim.pressure()),
+     plain("bar", undim.pressure(), 100000.0),
+     plain("atm", undim.pressure(), 101325.0),
+     plain("torr", undim.pressure(), 101325.0 / 760.0),
+     plain("psi", undim.pressure(), 6894.757293168361),
+     plain("mmHg", undim.pressure(), 133.322387415),
+     plain("inHg", undim.pressure(), 3386.389)]
 
 // The angle units — radian, degree, gradian, arcminute, arcsecond,
 // turn.
 pub fn angle_units() -> [UnUnit]
-    todo("units-nv.unconv.angle_units")
+    [unit("rad", undim.scalar(), 1.0, 0.0, true),
+     unit("deg", undim.scalar(), math.pi() / 180.0, 0.0, false),
+     plain("grad", undim.scalar(), math.pi() / 200.0),
+     plain("arcmin", undim.scalar(), math.pi() / 10800.0),
+     plain("arcsec", undim.scalar(), math.pi() / 648000.0),
+     plain("turn", undim.scalar(), 2.0 * math.pi())]
 
 // Every unit in every table.
 pub fn all_units() -> [UnUnit]
-    todo("units-nv.unconv.all_units")
+    let tables = [length_units(), mass_units(), time_units(), temperature_units(),
+                  area_units(), volume_units(), velocity_units(), force_units(),
+                  energy_units(), power_units(), pressure_units(), angle_units()]
+    var every: [UnUnit] = []
+    for t in tables
+        every = list.concat(every, t)
+    every
 
 // The units of a dimension.
 pub fn units_of(d: UnDim) -> [UnUnit]
-    todo("units-nv.unconv.units_of")
+    var found: [UnUnit] = []
+    for u in all_units()
+        if undim.dim_eq(u.dim, d)
+            list.push(found, u)
+    found
 
 // ── Typed conversions, for the static half ──────────────────────────
 
@@ -259,37 +515,39 @@ pub fn units_of(d: UnDim) -> [UnUnit]
 // the same reason: a `@value` struct of one Float carries no trait a
 // generic conversion could reach through.
 pub fn length_in(q: UnLength, u: UnUnit) -> Result<Float, UnFault>
-    todo("units-nv.unconv.length_in")
+    typed_in(unqty.length_si(q), unqty.length_dim(), u, true)
 
 // A length from a magnitude in a named unit.
 pub fn length_from(value: Float, u: UnUnit) -> Result<Float, UnFault>
-    todo("units-nv.unconv.length_from")
+    if not undim.dim_eq(u.dim, unqty.length_dim())
+        return Err(UnWrongDimension(unqty.length_dim(), u.dim))
+    Ok(to_si_absolute(value, u))
 
 // A mass in a named unit.
 pub fn mass_in(q: UnMass, u: UnUnit) -> Result<Float, UnFault>
-    todo("units-nv.unconv.mass_in")
+    typed_in(unqty.mass_si(q), unqty.mass_dim(), u, true)
 
 // A time in a named unit.
 pub fn time_in(q: UnTime, u: UnUnit) -> Result<Float, UnFault>
-    todo("units-nv.unconv.time_in")
+    typed_in(unqty.time_si(q), unqty.time_dim(), u, true)
 
 // A velocity in a named unit.
 pub fn velocity_in(q: UnVelocity, u: UnUnit) -> Result<Float, UnFault>
-    todo("units-nv.unconv.velocity_in")
+    typed_in(unqty.velocity_si(q), unqty.velocity_dim(), u, true)
 
 // A energy in a named unit.
 pub fn energy_in(q: UnEnergy, u: UnUnit) -> Result<Float, UnFault>
-    todo("units-nv.unconv.energy_in")
+    typed_in(unqty.energy_si(q), unqty.energy_dim(), u, true)
 
 // A pressure in a named unit.
 pub fn pressure_in(q: UnPressure, u: UnUnit) -> Result<Float, UnFault>
-    todo("units-nv.unconv.pressure_in")
+    typed_in(unqty.pressure_si(q), unqty.pressure_dim(), u, true)
 
 // An ABSOLUTE temperature in a named scale.
 //
 // The offset applies.  `temperature_k(293.15)` in `°C` is `20`.
 pub fn temperature_in(q: UnTemperature, u: UnUnit) -> Result<Float, UnFault>
-    todo("units-nv.unconv.temperature_in")
+    typed_in(unqty.temperature_si(q), undim.temperature(), u, true)
 
 // A temperature DIFFERENCE in a named scale.
 //
@@ -297,7 +555,7 @@ pub fn temperature_in(q: UnTemperature, u: UnUnit) -> Result<Float, UnFault>
 // in `°F` is `36` — the ratio applies and the offset does not, which is
 // the conversion a library with one temperature type gets wrong.
 pub fn temp_delta_in(q: UnTempDelta, u: UnUnit) -> Result<Float, UnFault>
-    todo("units-nv.unconv.temp_delta_in")
+    typed_in(unqty.temp_delta_si(q), undim.temperature(), u, false)
 
 // ── Checking a table ────────────────────────────────────────────────
 
@@ -308,7 +566,16 @@ pub fn temp_delta_in(q: UnTempDelta, u: UnUnit) -> Result<Float, UnFault>
 // For a caller's `custom_unit`, and for this package's own tests, which
 // run it over every table.
 pub fn check_unit(u: UnUnit) -> [UnFault]
-    todo("units-nv.unconv.check_unit")
+    var faults: [UnFault] = []
+    if u.offset != 0.0 and not undim.dim_eq(u.dim, undim.temperature())
+        list.push(faults, UnOffsetUnitInExpression(u.symbol))
+    if u.factor <= 0.0 or math.is_nan(u.factor)
+        list.push(faults, UnBadNumber(str.from_float(u.factor)))
+    if u.takes_prefix
+        let carried = carried_prefix(u.symbol)
+        if str.len(carried) > 0
+            list.push(faults, UnUnknownPrefix(carried, u.symbol))
+    faults
 
 // Two units with the same symbol in one table.
 //
@@ -316,4 +583,12 @@ pub fn check_unit(u: UnUnit) -> [UnFault]
 // entries answer to `gal`, `unit_named` resolves one of them and
 // nothing says which.
 pub fn duplicate_symbols(units: [UnUnit]) -> [Str]
-    todo("units-nv.unconv.duplicate_symbols")
+    var seen: [Str] = []
+    var repeated: [Str] = []
+    for u in units
+        if list.contains(seen, u.symbol)
+            if not list.contains(repeated, u.symbol)
+                list.push(repeated, u.symbol)
+        else
+            list.push(seen, u.symbol)
+    repeated
