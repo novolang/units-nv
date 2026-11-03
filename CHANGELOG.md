@@ -122,6 +122,12 @@ signature, effect row or published name moved.
 - **No `@tier(embedded)` claim**, though the typed half would fit one;
   see the README's "What is not included".
 
+This release requires novo 0.23.0 or later.
+
+## 0.0.3 — 2026-10-25
+
+A call that passes a variable to a `var` parameter now writes the `var` marker, which the 0.21.1 compiler asks for (E2050).  The package needs Novo 0.21.1 or later.  A file that names a sibling module's type, function or constant now has the `use` line for that module (E2033, E2003).  No signature and no behaviour changed.
+
 ## 0.0.2 — 2026-09-15
 
 README rewritten to the package README style guide (docs/writing-a-readme.md); no change to the interface.
